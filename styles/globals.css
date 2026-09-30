@@ -112,6 +112,7 @@ textarea:focus-visible {
 }
 
 .field input,
+.field select,
 .field textarea {
   font-family: inherit;
   font-size: 15px;
@@ -360,6 +361,7 @@ textarea:focus-visible {
 }
 
 .admin-shell .field input,
+.admin-shell .field select,
 .admin-shell .field textarea {
   background: #1e2329;
   border-color: rgba(255, 255, 255, 0.16);

@@ -1,6 +1,7 @@
 import { isAdminRequest } from '../../../../../lib/auth';
 import { getEvent, updateEvent, listPhotos } from '../../../../../lib/store';
 import { PRESETS } from '../../../../../lib/presets';
+import { UPLOAD_MODES } from '../../../../../lib/eventState';
 
 function clampInt(value, min, max) {
   if (value === '' || value === null) return null; // blank field: leave as is
@@ -39,6 +40,9 @@ export default async function handler(req, res) {
     }
     if (body.lockCouple !== undefined) {
       patch.lockCouple = Boolean(body.lockCouple);
+    }
+    if (body.uploadsMode !== undefined && UPLOAD_MODES.includes(body.uploadsMode)) {
+      patch.uploadsMode = body.uploadsMode;
     }
     if (body.keepsakeText !== undefined) {
       patch.keepsakeText = String(body.keepsakeText).slice(0, 80);

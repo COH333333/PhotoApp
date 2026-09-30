@@ -14,6 +14,8 @@ import {
 import { parseMultipart } from '../../../../lib/parseForm';
 import { makeThumbnail } from '../../../../lib/thumbnail';
 import { readGuestId } from '../../../../lib/guest';
+import { requireAccess } from '../../../../lib/access';
+import { uploadsOpen } from '../../../../lib/eventState';
 import { ensureEventFolder, uploadPhotoToDrive, isDriveConnected } from '../../../../lib/drive';
 
 export const config = { api: { bodyParser: false }, maxDuration: 60 };
@@ -76,6 +78,7 @@ export default async function handler(req, res) {
   const { slug } = req.query;
   const event = await getEvent(slug);
   if (!event) return res.status(404).json({ error: 'Event not found' });
+  if (!requireAccess(req, res, event)) return;
 
   if (req.method === 'GET') {
     const photos = await listPhotos(slug);
@@ -83,6 +86,9 @@ export default async function handler(req, res) {
   }
 
   if (req.method !== 'POST') return res.status(405).end();
+  if (!uploadsOpen(event)) {
+    return res.status(403).json({ error: 'Uploads for this event have closed. The album is still open.', closed: true });
+  }
 
   // Body: `photo` (the guest's original, always sent) and optionally
   // `editId` (an AI edit the guest chose to post instead).

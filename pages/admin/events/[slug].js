@@ -18,6 +18,8 @@ import { isAiConfigured } from '../../../lib/fal';
 import { aiLimitsFor } from '../../../lib/aiLimits';
 import { preparePhoto } from '../../../lib/heicConvert';
 import QRCodeCard from '../../../components/QRCodeCard';
+import { guestLink, albumLink } from '../../../lib/access';
+import { uploadsState } from '../../../lib/eventState';
 
 
 export async function getServerSideProps({ req, params }) {
@@ -30,7 +32,9 @@ export async function getServerSideProps({ req, params }) {
   const usage = await getAiUsage(params.slug, null);
 
   const proto = req.headers['x-forwarded-proto'] || 'https';
-  const guestUrl = `${proto}://${req.headers.host}/e/${event.slug}`;
+  const origin = `${proto}://${req.headers.host}`;
+  const guestUrl = guestLink(origin, event);
+  const albumUrl = albumLink(origin, event);
 
   const allPresets = Object.entries(PRESETS).map(([id, p]) => ({
     id,
@@ -47,6 +51,8 @@ export async function getServerSideProps({ req, params }) {
       event,
       photos,
       guestUrl,
+      albumUrl,
+      uploads: uploadsState(event),
       allPresets,
       aiConfigured: isAiConfigured(),
       aiUsed: usage.total,
@@ -61,6 +67,8 @@ export default function AdminEventDetail({
   event,
   photos,
   guestUrl,
+  albumUrl,
+  uploads,
   allPresets,
   aiConfigured,
   aiUsed,
@@ -79,6 +87,26 @@ export default function AdminEventDetail({
   const [keepsakeText, setKeepsakeText] = useState(event.keepsakeText || '');
   const [lockCouple, setLockCouple] = useState(event.lockCouple === true);
   const [saveState, setSaveState] = useState('');
+
+  const [name, setName] = useState(event.name);
+  const [date, setDate] = useState(event.date || '');
+  const [uploadsMode, setUploadsMode] = useState(uploads.mode);
+  const [settingsState, setSettingsState] = useState('');
+
+  async function saveSettings(e) {
+    e.preventDefault();
+    setSettingsState('Saving…');
+    try {
+      const res = await fetch(`/api/admin/events/${event.slug}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, date, uploadsMode }),
+      });
+      setSettingsState(res.ok ? 'Saved' : 'Could not save. Try again.');
+    } catch {
+      setSettingsState('Could not save. Check your connection.');
+    }
+  }
 
   async function handleReferenceUpload(e) {
     const picked = Array.from(e.target.files || []);
@@ -189,7 +217,37 @@ export default function AdminEventDetail({
 
         <div className="admin-grid">
           <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
-            <QRCodeCard url={guestUrl} />
+            <QRCodeCard url={guestUrl} albumUrl={albumUrl} />
+
+            <form className="card" onSubmit={saveSettings}>
+              <h2 className="display" style={{ fontSize: 16, marginTop: 0 }}>Event settings</h2>
+              <div className="field">
+                <label htmlFor="ev-name">Name</label>
+                <input id="ev-name" value={name} onChange={(e) => { setName(e.target.value); setSettingsState(''); }} required />
+              </div>
+              <div className="field">
+                <label htmlFor="ev-date">Date</label>
+                <input id="ev-date" type="date" value={date} onChange={(e) => { setDate(e.target.value); setSettingsState(''); }} />
+              </div>
+              <div className="field">
+                <label htmlFor="ev-uploads">Uploads</label>
+                <select id="ev-uploads" value={uploadsMode} onChange={(e) => { setUploadsMode(e.target.value); setSettingsState(''); }}>
+                  <option value="auto">Close 7 days after the event date</option>
+                  <option value="open">Open</option>
+                  <option value="closed">Closed</option>
+                </select>
+                <span className="muted" style={{ fontSize: 12.5 }}>
+                  {uploads.open ? 'Guests can add photos right now.' : 'Uploads are closed; the album stays viewable.'}
+                  {uploads.closesAt && uploads.open
+                    ? ` Closes ${new Date(uploads.closesAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}.`
+                    : ''}
+                </span>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                <button className="btn btn-primary">Save</button>
+                {settingsState && <span className="muted" role="status">{settingsState}</span>}
+              </div>
+            </form>
 
             <div className="card">
               <h2 className="display" style={{ fontSize: 16, marginTop: 0 }}>Couple reference photos</h2>

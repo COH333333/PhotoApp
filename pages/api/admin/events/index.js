@@ -5,6 +5,7 @@ import { slugify } from '../../../../lib/slug';
 import { DEFAULT_ENABLED } from '../../../../lib/presets';
 import { AI_DEFAULTS } from '../../../../lib/aiLimits';
 import { nanoid } from 'nanoid';
+import { newAccessKey } from '../../../../lib/access';
 
 export default async function handler(req, res) {
   if (!isAdminRequest(req)) return res.status(401).json({ error: 'Not signed in' });
@@ -35,6 +36,7 @@ export default async function handler(req, res) {
 
     const event = {
       slug,
+      accessKey: newAccessKey(),
       name,
       date: date || null,
       primaryColor: primaryColor || '#1f6f63',
@@ -45,6 +47,7 @@ export default async function handler(req, res) {
       aiPerGuest: AI_DEFAULTS.perGuest,
       aiPerEvent: AI_DEFAULTS.perEvent,
       keepsakeText: '',
+      uploadsMode: 'auto',
       driveFolderId,
       createdAt: new Date().toISOString(),
     };

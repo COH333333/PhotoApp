@@ -3,6 +3,8 @@ import { put } from '@vercel/blob';
 import { getEvent, reserveAiEdit, releaseAiEdit, saveEdit, getAiUsage } from '../../../../lib/store';
 import { parseMultipart } from '../../../../lib/parseForm';
 import { readGuestId } from '../../../../lib/guest';
+import { requireAccess } from '../../../../lib/access';
+import { uploadsOpen } from '../../../../lib/eventState';
 import {
   PRESETS,
   publicPresets,
@@ -49,6 +51,10 @@ export default async function handler(req, res) {
   const { slug } = req.query;
   const event = await getEvent(slug);
   if (!event) return res.status(404).json({ error: 'Event not found' });
+  if (!requireAccess(req, res, event)) return;
+  if (!uploadsOpen(event)) {
+    return res.status(403).json({ error: 'Uploads for this event have closed.', closed: true });
+  }
 
   if (!isAiConfigured()) {
     return res.status(503).json({ error: 'AI edits are not set up for this event yet.' });

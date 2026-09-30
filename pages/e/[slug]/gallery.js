@@ -3,25 +3,40 @@ import Head from 'next/head';
 import Link from 'next/link';
 import { getEvent, listPhotos, publicPhoto } from '../../../lib/store';
 import PhotoGallery from '../../../components/PhotoGallery';
+import LockedEvent from '../../../components/LockedEvent';
+import { guardEventPage } from '../../../lib/access';
+import { uploadsOpen } from '../../../lib/eventState';
 
-export async function getServerSideProps({ params }) {
+export async function getServerSideProps(ctx) {
+  const { params } = ctx;
   const event = await getEvent(params.slug);
   if (!event) return { notFound: true };
+  const publicEvent = {
+    slug: event.slug,
+    name: event.name,
+    primaryColor: event.primaryColor,
+    accentColor: event.accentColor,
+  };
+  const guard = guardEventPage(ctx, event);
+  if (guard.redirect) return { redirect: guard.redirect };
+  if (guard.locked) return { props: { event: publicEvent, locked: true } };
+
   const photos = await listPhotos(params.slug);
   return {
     props: {
-      event: {
-        slug: event.slug,
-        name: event.name,
-        primaryColor: event.primaryColor,
-        accentColor: event.accentColor,
-      },
+      event: publicEvent,
+      canUpload: uploadsOpen(event),
       initialPhotos: photos.map(publicPhoto),
     },
   };
 }
 
-export default function GuestGalleryPage({ event, initialPhotos }) {
+export default function GuestGalleryPage({ event, locked, canUpload, initialPhotos = [] }) {
+  if (locked) return <LockedEvent event={event} />;
+  return <Gallery event={event} canUpload={canUpload} initialPhotos={initialPhotos} />;
+}
+
+function Gallery({ event, canUpload, initialPhotos }) {
   const [photos, setPhotos] = useState(initialPhotos);
 
   // Light polling keeps the album feeling live without needing websockets.
@@ -53,9 +68,13 @@ export default function GuestGalleryPage({ event, initialPhotos }) {
           <h1 className="display" style={{ fontSize: 22 }}>
             {event.name}
           </h1>
-          <Link href={`/e/${event.slug}`} className="muted" style={{ textDecoration: 'none' }}>
-            &larr; Add a photo
-          </Link>
+          {canUpload ? (
+            <Link href={`/e/${event.slug}`} className="muted" style={{ textDecoration: 'none' }}>
+              &larr; Add a photo
+            </Link>
+          ) : (
+            <span className="muted" style={{ fontSize: 13 }}>Uploads closed</span>
+          )}
         </div>
         <PhotoGallery photos={photos} />
       </div>

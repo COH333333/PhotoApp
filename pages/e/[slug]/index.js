@@ -7,10 +7,32 @@ import { isAiConfigured } from '../../../lib/fal';
 import { getOrCreateGuestId } from '../../../lib/guest';
 import { aiLimitsFor } from '../../../lib/aiLimits';
 import CameraCapture from '../../../components/CameraCapture';
+import LockedEvent from '../../../components/LockedEvent';
+import { guardEventPage } from '../../../lib/access';
+import { uploadsState } from '../../../lib/eventState';
 
-export async function getServerSideProps({ params, req, res }) {
+function publicEvent(event) {
+  return {
+    slug: event.slug,
+    name: event.name,
+    primaryColor: event.primaryColor,
+    accentColor: event.accentColor,
+  };
+}
+
+export async function getServerSideProps(ctx) {
+  const { params, req, res } = ctx;
   const event = await getEvent(params.slug);
   if (!event) return { notFound: true };
+
+  const guard = guardEventPage(ctx, event);
+  if (guard.redirect) return { redirect: guard.redirect };
+  if (guard.locked) return { props: { event: publicEvent(event), locked: true } };
+
+  const uploads = uploadsState(event);
+  if (!uploads.open) {
+    return { props: { event: publicEvent(event), closed: true } };
+  }
 
   const aiOn = isAiConfigured();
   const presets = aiOn ? publicPresets(event) : [];
@@ -25,12 +47,7 @@ export async function getServerSideProps({ params, req, res }) {
 
   return {
     props: {
-      event: {
-        slug: event.slug,
-        name: event.name,
-        primaryColor: event.primaryColor,
-        accentColor: event.accentColor,
-      },
+      event: publicEvent(event),
       presets,
       backdrops: presets.length ? publicBackdrops(event) : [],
       initialRemaining: presets.length ? remaining : 0,
@@ -39,7 +56,30 @@ export async function getServerSideProps({ params, req, res }) {
 }
 
 // Steps: capture → review → (selfie) → working → result → posting → done
-export default function GuestCapturePage({ event, presets, backdrops, initialRemaining }) {
+export default function GuestCapturePage({ event, locked, closed, presets = [], backdrops = [], initialRemaining = 0 }) {
+  if (locked) return <LockedEvent event={event} />;
+  if (closed) return <UploadsClosed event={event} />;
+  return <CaptureFlow event={event} presets={presets} backdrops={backdrops} initialRemaining={initialRemaining} />;
+}
+
+function UploadsClosed({ event }) {
+  return (
+    <div className="page" style={{ '--event-primary': event.primaryColor, '--event-accent': event.accentColor }}>
+      <Head>
+        <title>{`${event.name} - Moment Share`}</title>
+      </Head>
+      <div className="container" style={{ paddingTop: 96, textAlign: 'center' }}>
+        <h1 className="display" style={{ fontSize: 24, marginBottom: 12 }}>{event.name}</h1>
+        <p className="muted" style={{ marginBottom: 24 }}>
+          Uploads for this event have closed, but the album is still here to browse, save, and share.
+        </p>
+        <Link href={`/e/${event.slug}/gallery`} className="btn btn-primary">View the album</Link>
+      </div>
+    </div>
+  );
+}
+
+function CaptureFlow({ event, presets, backdrops, initialRemaining }) {
   const [step, setStep] = useState('capture');
   const [photo, setPhoto] = useState(null); // prepared JPEG Blob
   const [photoUrl, setPhotoUrl] = useState(null);
@@ -117,6 +157,10 @@ export default function GuestCapturePage({ event, presets, backdrops, initialRem
       const res = await fetch(`/api/events/${event.slug}/photos`, { method: 'POST', body: form });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
+        if (data.closed) {
+          window.location.reload();
+          return;
+        }
         if (data.expired) setEdit(null);
         setPostFailed({ useEdit: useEdit && !data.expired, error: data.error });
         setStep('postError');
