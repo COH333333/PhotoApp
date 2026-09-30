@@ -23,7 +23,7 @@ function CopyButton({ text, label }) {
 
 // The QR code and both links carry the event's secret key. Anyone who opens
 // one gets in; anyone who only guesses the address doesn't.
-export default function QRCodeCard({ url, albumUrl }) {
+export default function QRCodeCard({ url, albumUrl, signageHref, wallUrl }) {
   const [dataUrl, setDataUrl] = useState(null);
 
   useEffect(() => {
@@ -52,11 +52,20 @@ export default function QRCodeCard({ url, albumUrl }) {
       <div style={{ display: 'flex', gap: 8, justifyContent: 'center', flexWrap: 'wrap' }}>
         <CopyButton text={url} label="Copy guest link" />
         {albumUrl && <CopyButton text={albumUrl} label="Copy album link" />}
+        {signageHref && (
+          <a className="btn btn-secondary" href={signageHref} target="_blank" rel="noreferrer">Print signage</a>
+        )}
       </div>
       {albumUrl && (
         <p className="muted" style={{ fontSize: 12.5, marginTop: 12, marginBottom: 0 }}>
           The album link opens straight to the photos. Send it out after the event so everyone can
           save and share what was taken.
+        </p>
+      )}
+      {wallUrl && (
+        <p className="muted" style={{ fontSize: 12.5, marginTop: 10, marginBottom: 0 }}>
+          <a href={wallUrl} target="_blank" rel="noreferrer" style={{ color: 'inherit' }}>Open the live wall</a> on a
+          TV or projector at the venue: a slideshow of new photos with the QR code beside it. Press F for fullscreen.
         </p>
       )}
     </div>

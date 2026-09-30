@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import Head from 'next/head';
 import { getEvent, pagePhotos, publicPhoto } from '../../../lib/store';
 import PhotoGallery from '../../../components/PhotoGallery';
@@ -33,6 +34,8 @@ export default function GuestGalleryPage({ event, locked, canUpload, initialPhot
 }
 
 function Gallery({ event, canUpload, initialPhotos, initialHasMore }) {
+  const [challenge, setChallenge] = useState(null);
+  const hasChallenges = event.challenges.length > 0;
   return (
     <div
       className="page"
@@ -48,7 +51,32 @@ function Gallery({ event, canUpload, initialPhotos, initialHasMore }) {
           linkLabel="Add a photo"
         />
         {!canUpload && <p className="muted" style={{ marginTop: -8, fontSize: 13 }}>Uploads have closed. Tap any photo to save or share it.</p>}
-        <PhotoGallery slug={event.slug} initialPhotos={initialPhotos} initialHasMore={initialHasMore} />
+        {hasChallenges && (
+          <div className="filter-row" role="tablist" aria-label="Filter by challenge">
+            <button className={`filter-chip${challenge === null ? ' is-active' : ''}`} onClick={() => setChallenge(null)}>All</button>
+            {event.challenges.map((c) => (
+              <button
+                key={c.id}
+                className={`filter-chip${challenge === c.id ? ' is-active' : ''}`}
+                onClick={() => setChallenge(c.id)}
+              >
+                {c.text}
+              </button>
+            ))}
+          </div>
+        )}
+        {challenge === null ? (
+          <PhotoGallery slug={event.slug} initialPhotos={initialPhotos} initialHasMore={initialHasMore} />
+        ) : (
+          <PhotoGallery
+            key={challenge}
+            slug={event.slug}
+            initialPhotos={[]}
+            initialHasMore
+            query={`&challenge=${encodeURIComponent(challenge)}`}
+            emptyText="No photos for this challenge yet."
+          />
+        )}
       </div>
     </div>
   );

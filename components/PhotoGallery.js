@@ -75,6 +75,7 @@ export default function PhotoGallery({
   initialHasMore = false,
   live = true,
   filter = null,
+  query = '',
   emptyText = 'No photos yet. Be the first to add one.',
 }) {
   const [photos, setPhotos] = useState(initialPhotos);
@@ -86,11 +87,12 @@ export default function PhotoGallery({
   const sentinel = useRef(null);
 
   const loadMore = useCallback(async () => {
-    if (loadingMore || !hasMore || photos.length === 0) return;
+    if (loadingMore || !hasMore) return;
     setLoadingMore(true);
     try {
-      const oldest = photos[photos.length - 1].createdAt;
-      const res = await fetch(`/api/events/${slug}/photos?limit=${PAGE}&before=${encodeURIComponent(oldest)}`);
+      const oldest = photos[photos.length - 1]?.createdAt;
+      const before = oldest ? `&before=${encodeURIComponent(oldest)}` : '';
+      const res = await fetch(`/api/events/${slug}/photos?limit=${PAGE}${before}${query}`);
       if (!res.ok) return;
       const data = await res.json();
       setPhotos((cur) => {
@@ -103,7 +105,7 @@ export default function PhotoGallery({
     } finally {
       setLoadingMore(false);
     }
-  }, [slug, photos, hasMore, loadingMore]);
+  }, [slug, photos, hasMore, loadingMore, query]);
 
   // Infinite scroll: load the next page when the sentinel scrolls into view.
   useEffect(() => {
@@ -123,7 +125,7 @@ export default function PhotoGallery({
       try {
         const newest = photos[0]?.createdAt;
         const q = newest ? `?since=${encodeURIComponent(newest)}&limit=60` : `?limit=${PAGE}`;
-        const res = await fetch(`/api/events/${slug}/photos${q}`);
+        const res = await fetch(`/api/events/${slug}/photos${q}${query}`);
         if (!res.ok) return;
         const data = await res.json();
         if (data.photos.length === 0) return;
@@ -137,7 +139,7 @@ export default function PhotoGallery({
       }
     }, POLL_MS);
     return () => clearInterval(interval);
-  }, [slug, live, photos]);
+  }, [slug, live, photos, query]);
 
   const shown = filter ? photos.filter(filter) : photos;
 

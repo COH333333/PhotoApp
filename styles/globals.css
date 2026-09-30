@@ -567,3 +567,70 @@ textarea:focus-visible {
   object-fit: cover;
   display: block;
 }
+
+/* Photo challenges */
+.challenge-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.challenge-chip {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  text-align: left;
+  font-family: inherit;
+  font-size: 14.5px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: #fff;
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.challenge-chip.is-selected {
+  border-color: var(--event-primary, #1f6f63);
+  background: color-mix(in srgb, var(--event-primary, #1f6f63) 8%, #fff);
+}
+
+.challenge-chip.is-done {
+  color: rgba(20, 24, 28, 0.55);
+}
+
+.challenge-mark {
+  width: 18px;
+  text-align: center;
+  color: var(--event-primary, #1f6f63);
+  flex-shrink: 0;
+}
+
+.filter-row {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  padding-bottom: 8px;
+  margin-bottom: 8px;
+  -webkit-overflow-scrolling: touch;
+}
+
+.filter-chip {
+  flex-shrink: 0;
+  font-family: inherit;
+  font-size: 13px;
+  padding: 6px 12px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: #fff;
+  color: var(--ink);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.filter-chip.is-active {
+  background: var(--event-primary, #1f6f63);
+  border-color: var(--event-primary, #1f6f63);
+  color: #fff;
+}

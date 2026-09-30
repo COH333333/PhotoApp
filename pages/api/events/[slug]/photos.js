@@ -86,7 +86,8 @@ export default async function handler(req, res) {
     const limit = Math.min(60, Math.max(1, Number(req.query.limit) || 30));
     const before = typeof req.query.before === 'string' ? req.query.before : null;
     const since = typeof req.query.since === 'string' ? req.query.since : null;
-    const page = await pagePhotos(slug, { limit, before, since });
+    const challenge = typeof req.query.challenge === 'string' ? req.query.challenge : null;
+    const page = await pagePhotos(slug, { limit, before, since, challenge });
     return res.status(200).json({ photos: page.photos.map(publicPhoto), hasMore: page.hasMore });
   }
 
@@ -119,10 +120,14 @@ export default async function handler(req, res) {
     }
   }
 
+  // Optional challenge tag; must be one of the host's.
+  const challenge = (event.challenges || []).find((c) => c.id === fields.challengeId) || null;
+
   const id = nanoid(12);
   const photo = {
     id,
     createdAt: new Date().toISOString(),
+    challengeId: challenge ? challenge.id : null,
     aiPreset: edit?.preset || null,
     aiLabel: edit?.label || null,
     // With approval on, a photo waits in the host's queue before it shows.

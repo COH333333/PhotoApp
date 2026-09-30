@@ -12,6 +12,7 @@ import { guardEventPage } from '../../../lib/access';
 import { uploadsState } from '../../../lib/eventState';
 import { publicEvent } from '../../../lib/publicEvent';
 import EventHeader from '../../../components/EventHeader';
+import ChallengeChips, { useCompleted } from '../../../components/ChallengeChips';
 
 export async function getServerSideProps(ctx) {
   const { params, req, res } = ctx;
@@ -83,6 +84,8 @@ function CaptureFlow({ event, presets, backdrops, initialRemaining }) {
   const [message, setMessage] = useState('');
   const [postFailed, setPostFailed] = useState(null); // what we tried to post
   const [pendingApproval, setPendingApproval] = useState(false);
+  const [challengeId, setChallengeId] = useState(null);
+  const [done, markDone] = useCompleted(event.slug);
   const [backdrop, setBackdrop] = useState(null);
 
   useEffect(() => () => photoUrl && URL.revokeObjectURL(photoUrl), [photoUrl]);
@@ -96,6 +99,7 @@ function CaptureFlow({ event, presets, backdrops, initialRemaining }) {
     setMessage('');
     setPostFailed(null);
     setBackdrop(null);
+    setChallengeId(null);
     setStep('capture');
   }
 
@@ -147,6 +151,7 @@ function CaptureFlow({ event, presets, backdrops, initialRemaining }) {
     const form = new FormData();
     form.append('photo', photo, 'photo.jpg');
     if (useEdit && edit) form.append('editId', edit.editId);
+    if (challengeId) form.append('challengeId', challengeId);
     try {
       const res = await fetch(`/api/events/${event.slug}/photos`, { method: 'POST', body: form });
       const data = await res.json().catch(() => ({}));
@@ -161,6 +166,7 @@ function CaptureFlow({ event, presets, backdrops, initialRemaining }) {
         return;
       }
       setPendingApproval(Boolean(data.pending));
+      if (challengeId) markDone(challengeId);
       setStep('done');
     } catch {
       setPostFailed({ useEdit, error: 'Check your connection and try again.' });
@@ -180,17 +186,28 @@ function CaptureFlow({ event, presets, backdrops, initialRemaining }) {
 
         {step === 'capture' && (
           <div style={{ paddingTop: 24 }}>
+            {challengeId && (
+              <p className="notice" role="status" style={{ textAlign: 'center' }}>
+                Challenge: {event.challenges.find((c) => c.id === challengeId)?.text}
+              </p>
+            )}
             <CameraCapture onPhoto={handlePhoto} />
+            <ChallengeChips challenges={event.challenges} selected={challengeId} onSelect={setChallengeId} done={done} />
           </div>
         )}
 
         {step === 'review' && (
           <div>
             <img src={photoUrl} alt="Your photo" className="preview" />
-            <div style={{ display: 'flex', gap: 10, margin: '14px 0 28px' }}>
+            <div style={{ display: 'flex', gap: 10, margin: '14px 0 20px' }}>
               <button className="btn btn-secondary" onClick={startOver} style={{ flex: 1 }}>Retake</button>
               <button className="btn btn-primary" onClick={() => post(false)} style={{ flex: 2 }}>Post photo</button>
             </div>
+            {event.challenges.length > 0 && (
+              <div style={{ marginBottom: 28 }}>
+                <ChallengeChips challenges={event.challenges} selected={challengeId} onSelect={setChallengeId} done={done} compact />
+              </div>
+            )}
 
             {aiAvailable && (
               <section aria-labelledby="ai-heading">

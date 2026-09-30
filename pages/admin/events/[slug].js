@@ -19,7 +19,7 @@ import { isAiConfigured } from '../../../lib/fal';
 import { aiLimitsFor } from '../../../lib/aiLimits';
 import { preparePhoto } from '../../../lib/heicConvert';
 import QRCodeCard from '../../../components/QRCodeCard';
-import { guestLink, albumLink } from '../../../lib/access';
+import { guestLink, albumLink, wallLink } from '../../../lib/access';
 import { uploadsState } from '../../../lib/eventState';
 
 
@@ -36,6 +36,7 @@ export async function getServerSideProps({ req, params }) {
   const origin = `${proto}://${req.headers.host}`;
   const guestUrl = guestLink(origin, event);
   const albumUrl = albumLink(origin, event);
+  const wallUrl = wallLink(origin, event);
 
   const allPresets = presetSummaries(event);
 
@@ -45,6 +46,7 @@ export async function getServerSideProps({ req, params }) {
       initialPhotos: photos,
       guestUrl,
       albumUrl,
+      wallUrl,
       uploads: uploadsState(event),
       allPresets,
       templates: templateOptions(),
@@ -63,6 +65,7 @@ export default function AdminEventDetail({
   initialPhotos,
   guestUrl,
   albumUrl,
+  wallUrl,
   uploads,
   allPresets,
   templates,
@@ -98,6 +101,18 @@ export default function AdminEventDetail({
   const [coverUrl, setCoverUrl] = useState(event.coverUrl || null);
   const [uploadingCover, setUploadingCover] = useState(false);
   const [settingsState, setSettingsState] = useState('');
+  const [challengeText, setChallengeText] = useState((event.challenges || []).map((c) => c.text).join('\n'));
+
+  // One challenge per line. Lines that match an existing challenge keep its
+  // id, so photos already tagged with it stay attached.
+  function challengesFromText() {
+    const existing = event.challenges || [];
+    return challengeText
+      .split('\n')
+      .map((t) => t.trim())
+      .filter(Boolean)
+      .map((text) => ({ id: existing.find((c) => c.text === text)?.id, text }));
+  }
 
   async function handleCoverUpload(e) {
     const file = e.target.files?.[0];
@@ -149,6 +164,7 @@ export default function AdminEventDetail({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name, date, uploadsMode, approvalMode, type, subject: subjectText, welcome, hashtag, primaryColor, accentColor,
+          challenges: challengesFromText(),
         }),
       });
       setSettingsState(res.ok ? 'Saved. Reload to see updated edit names.' : 'Could not save. Try again.');
@@ -272,7 +288,7 @@ export default function AdminEventDetail({
 
         <div className="admin-grid">
           <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
-            <QRCodeCard url={guestUrl} albumUrl={albumUrl} />
+            <QRCodeCard url={guestUrl} albumUrl={albumUrl} signageHref={`/admin/events/${event.slug}/signage`} wallUrl={wallUrl} />
 
             <form className="card" onSubmit={saveSettings}>
               <h2 className="display" style={{ fontSize: 16, marginTop: 0 }}>Event settings</h2>
@@ -365,6 +381,20 @@ export default function AdminEventDetail({
                   {uploads.closesAt && uploads.open
                     ? ` Closes ${new Date(uploads.closesAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}.`
                     : ''}
+                </span>
+              </div>
+              <div className="field">
+                <label htmlFor="ev-challenges">Photo challenges</label>
+                <textarea
+                  id="ev-challenges"
+                  rows={6}
+                  value={challengeText}
+                  onChange={(e) => { setChallengeText(e.target.value); setSettingsState(''); }}
+                  placeholder={'A photo with the couple\nYour table, all together'}
+                />
+                <span className="muted" style={{ fontSize: 12.5 }}>
+                  One per line, up to 20. Guests tap a challenge before taking a photo; the album can be
+                  filtered by them. Leave empty to turn challenges off.
                 </span>
               </div>
               <label className="check-row">
