@@ -244,7 +244,7 @@ export default function AdminEventDetail({
                 <div className="gallery-grid">
                   {photos.map((p) => (
                     <div key={p.id} style={{ position: 'relative' }}>
-                      <img src={p.url} alt="" />
+                      <img src={p.thumbUrl || p.url} alt="" loading="lazy" decoding="async" />
                       {p.aiLabel && <span className="ai-tag">AI · {p.aiLabel}</span>}
                       {p.syncStatus !== 'synced' && (
                         <span className="sync-tag">{p.syncStatus === 'failed' ? 'sync failed' : 'not in Drive'}</span>

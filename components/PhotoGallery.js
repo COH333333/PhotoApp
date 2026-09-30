@@ -22,7 +22,12 @@ export default function PhotoGallery({ photos }) {
       <div className="gallery-grid">
         {photos.map((p) => (
           <button key={p.id} className="gallery-cell" onClick={() => open(p)}>
-            <img src={p.url} alt={p.aiLabel ? `AI edit: ${p.aiLabel}` : 'Guest photo'} loading="lazy" />
+            <img
+              src={p.thumbUrl || p.url}
+              alt={p.aiLabel ? `AI edit: ${p.aiLabel}` : 'Guest photo'}
+              loading="lazy"
+              decoding="async"
+            />
             {p.aiLabel && <span className="ai-tag">AI · {p.aiLabel}</span>}
           </button>
         ))}

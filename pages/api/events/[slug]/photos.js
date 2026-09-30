@@ -12,6 +12,7 @@ import {
   releaseLock,
 } from '../../../../lib/store';
 import { parseMultipart } from '../../../../lib/parseForm';
+import { makeThumbnail } from '../../../../lib/thumbnail';
 import { readGuestId } from '../../../../lib/guest';
 import { ensureEventFolder, uploadPhotoToDrive, isDriveConnected } from '../../../../lib/drive';
 
@@ -125,6 +126,10 @@ export default async function handler(req, res) {
       contentType: 'image/jpeg',
     });
 
+    // Whatever ends up as the album's main image is what the grid shows,
+    // so the thumbnail is made from that, not always the original.
+    let displayBuffer = original.buffer;
+
     if (edit) {
       // The AI result lives on fal's CDN; copy it into our own storage.
       const editedBuffer = await fetchBuffer(edit.resultUrl);
@@ -134,6 +139,7 @@ export default async function handler(req, res) {
       });
       photo.url = editedBlob.url;
       photo.originalUrl = originalBlob.url;
+      displayBuffer = editedBuffer;
       driveFiles.push({ filename: `${id} - ${edit.label}.jpg`, mimeType: 'image/jpeg', buffer: editedBuffer });
     } else {
       photo.url = originalBlob.url;
@@ -143,6 +149,16 @@ export default async function handler(req, res) {
       mimeType: 'image/jpeg',
       buffer: original.buffer,
     });
+
+    // Best effort. Without it the gallery just loads the full photo.
+    const thumb = await makeThumbnail(displayBuffer);
+    if (thumb) {
+      const thumbBlob = await put(`photos/${slug}/${id}-thumb.jpg`, thumb, {
+        access: 'public',
+        contentType: 'image/jpeg',
+      });
+      photo.thumbUrl = thumbBlob.url;
+    }
   } catch (err) {
     console.error('Saving photo failed:', err.message);
     if (edit) await putEditBack(edit).catch(() => {});
