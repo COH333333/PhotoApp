@@ -3,7 +3,7 @@ import { nanoid } from 'nanoid';
 import {
   getEvent,
   updateEvent,
-  listPhotos,
+  pagePhotos,
   addPhoto,
   publicPhoto,
   takeEdit,
@@ -12,7 +12,7 @@ import {
   releaseLock,
 } from '../../../../lib/store';
 import { parseMultipart } from '../../../../lib/parseForm';
-import { makeThumbnail } from '../../../../lib/thumbnail';
+import { makeThumbnail, makeMedium } from '../../../../lib/thumbnail';
 import { readGuestId } from '../../../../lib/guest';
 import { requireAccess } from '../../../../lib/access';
 import { uploadsOpen } from '../../../../lib/eventState';
@@ -81,8 +81,13 @@ export default async function handler(req, res) {
   if (!requireAccess(req, res, event)) return;
 
   if (req.method === 'GET') {
-    const photos = await listPhotos(slug);
-    return res.status(200).json({ photos: photos.map(publicPhoto) });
+    // Paged, newest first. `before` walks back through older photos as the
+    // guest scrolls; `since` fetches only what arrived after the last poll.
+    const limit = Math.min(60, Math.max(1, Number(req.query.limit) || 30));
+    const before = typeof req.query.before === 'string' ? req.query.before : null;
+    const since = typeof req.query.since === 'string' ? req.query.since : null;
+    const page = await pagePhotos(slug, { limit, before, since });
+    return res.status(200).json({ photos: page.photos.map(publicPhoto), hasMore: page.hasMore });
   }
 
   if (req.method !== 'POST') return res.status(405).end();
@@ -120,6 +125,8 @@ export default async function handler(req, res) {
     createdAt: new Date().toISOString(),
     aiPreset: edit?.preset || null,
     aiLabel: edit?.label || null,
+    // With approval on, a photo waits in the host's queue before it shows.
+    status: event.approvalMode === true ? 'pending' : 'approved',
     driveFileId: null,
     driveViewUrl: null,
     syncStatus: 'pending',
@@ -156,15 +163,24 @@ export default async function handler(req, res) {
       buffer: original.buffer,
     });
 
-    // Best effort. Without it the gallery just loads the full photo.
-    const thumb = await makeThumbnail(displayBuffer);
+    // Best effort. Without them the gallery just loads the full photo.
+    const [thumb, medium] = await Promise.all([makeThumbnail(displayBuffer), makeMedium(displayBuffer)]);
+    const uploads = [];
     if (thumb) {
-      const thumbBlob = await put(`photos/${slug}/${id}-thumb.jpg`, thumb, {
-        access: 'public',
-        contentType: 'image/jpeg',
-      });
-      photo.thumbUrl = thumbBlob.url;
+      uploads.push(
+        put(`photos/${slug}/${id}-thumb.jpg`, thumb, { access: 'public', contentType: 'image/jpeg' }).then(
+          (b) => (photo.thumbUrl = b.url)
+        )
+      );
     }
+    if (medium) {
+      uploads.push(
+        put(`photos/${slug}/${id}-medium.jpg`, medium, { access: 'public', contentType: 'image/jpeg' }).then(
+          (b) => (photo.mediumUrl = b.url)
+        )
+      );
+    }
+    await Promise.all(uploads);
   } catch (err) {
     console.error('Saving photo failed:', err.message);
     if (edit) await putEditBack(edit).catch(() => {});
@@ -196,5 +212,5 @@ export default async function handler(req, res) {
     );
   }
 
-  return res.status(201).json({ photo: publicPhoto(photo) });
+  return res.status(201).json({ photo: publicPhoto(photo), pending: photo.status === 'pending' });
 }

@@ -1,7 +1,6 @@
-import { useEffect, useState } from 'react';
 import Head from 'next/head';
 import Link from 'next/link';
-import { getEvent, listPhotos, publicPhoto } from '../../../lib/store';
+import { getEvent, pagePhotos, publicPhoto } from '../../../lib/store';
 import PhotoGallery from '../../../components/PhotoGallery';
 import LockedEvent from '../../../components/LockedEvent';
 import { guardEventPage } from '../../../lib/access';
@@ -21,40 +20,23 @@ export async function getServerSideProps(ctx) {
   if (guard.redirect) return { redirect: guard.redirect };
   if (guard.locked) return { props: { event: publicEvent, locked: true } };
 
-  const photos = await listPhotos(params.slug);
+  const page = await pagePhotos(params.slug, { limit: 30 });
   return {
     props: {
       event: publicEvent,
       canUpload: uploadsOpen(event),
-      initialPhotos: photos.map(publicPhoto),
+      initialPhotos: page.photos.map(publicPhoto),
+      initialHasMore: page.hasMore,
     },
   };
 }
 
-export default function GuestGalleryPage({ event, locked, canUpload, initialPhotos = [] }) {
+export default function GuestGalleryPage({ event, locked, canUpload, initialPhotos = [], initialHasMore = false }) {
   if (locked) return <LockedEvent event={event} />;
-  return <Gallery event={event} canUpload={canUpload} initialPhotos={initialPhotos} />;
+  return <Gallery event={event} canUpload={canUpload} initialPhotos={initialPhotos} initialHasMore={initialHasMore} />;
 }
 
-function Gallery({ event, canUpload, initialPhotos }) {
-  const [photos, setPhotos] = useState(initialPhotos);
-
-  // Light polling keeps the album feeling live without needing websockets.
-  useEffect(() => {
-    const interval = setInterval(async () => {
-      try {
-        const res = await fetch(`/api/events/${event.slug}/photos`);
-        if (res.ok) {
-          const data = await res.json();
-          setPhotos(data.photos);
-        }
-      } catch {
-        // Ignore transient network errors; next poll will retry.
-      }
-    }, 8000);
-    return () => clearInterval(interval);
-  }, [event.slug]);
-
+function Gallery({ event, canUpload, initialPhotos, initialHasMore }) {
   return (
     <div
       className="page"
@@ -76,7 +58,7 @@ function Gallery({ event, canUpload, initialPhotos }) {
             <span className="muted" style={{ fontSize: 13 }}>Uploads closed</span>
           )}
         </div>
-        <PhotoGallery photos={photos} />
+        <PhotoGallery slug={event.slug} initialPhotos={initialPhotos} initialHasMore={initialHasMore} />
       </div>
     </div>
   );

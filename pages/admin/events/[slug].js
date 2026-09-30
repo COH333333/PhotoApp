@@ -2,7 +2,7 @@ import { useState } from 'react';
 import Head from 'next/head';
 import Link from 'next/link';
 import { isAdminRequest } from '../../../lib/auth';
-import { getEvent, listPhotos, getAiUsage } from '../../../lib/store';
+import { getEvent, listAllPhotos, getAiUsage } from '../../../lib/store';
 // Deliberately NOT importing PRESETS or maxCostFor here: referencing them in
 // the rendered component pulls lib/presets into the client bundle, prompts and
 // all, and that bundle is fetchable by any guest. Everything this page needs
@@ -28,7 +28,7 @@ export async function getServerSideProps({ req, params }) {
   }
   const event = await getEvent(params.slug);
   if (!event) return { notFound: true };
-  const photos = await listPhotos(params.slug);
+  const photos = await listAllPhotos(params.slug);
   const usage = await getAiUsage(params.slug, null);
 
   const proto = req.headers['x-forwarded-proto'] || 'https';
@@ -49,7 +49,7 @@ export async function getServerSideProps({ req, params }) {
   return {
     props: {
       event,
-      photos,
+      initialPhotos: photos,
       guestUrl,
       albumUrl,
       uploads: uploadsState(event),
@@ -65,7 +65,7 @@ export async function getServerSideProps({ req, params }) {
 
 export default function AdminEventDetail({
   event,
-  photos,
+  initialPhotos,
   guestUrl,
   albumUrl,
   uploads,
@@ -91,7 +91,26 @@ export default function AdminEventDetail({
   const [name, setName] = useState(event.name);
   const [date, setDate] = useState(event.date || '');
   const [uploadsMode, setUploadsMode] = useState(uploads.mode);
+  const [approvalMode, setApprovalMode] = useState(event.approvalMode === true);
   const [settingsState, setSettingsState] = useState('');
+
+  const [photos, setPhotos] = useState(initialPhotos);
+  const [photoFilter, setPhotoFilter] = useState('all');
+
+  async function setStatus(id, status) {
+    const res = await fetch(`/api/admin/events/${event.slug}/photos/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status }),
+    });
+    if (res.ok) setPhotos((cur) => cur.map((p) => (p.id === id ? { ...p, status } : p)));
+  }
+
+  async function deletePhoto(id) {
+    if (!window.confirm('Delete this photo from the album? This cannot be undone.')) return;
+    const res = await fetch(`/api/admin/events/${event.slug}/photos/${id}`, { method: 'DELETE' });
+    if (res.ok) setPhotos((cur) => cur.filter((p) => p.id !== id));
+  }
 
   async function saveSettings(e) {
     e.preventDefault();
@@ -100,7 +119,7 @@ export default function AdminEventDetail({
       const res = await fetch(`/api/admin/events/${event.slug}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, date, uploadsMode }),
+        body: JSON.stringify({ name, date, uploadsMode, approvalMode }),
       });
       setSettingsState(res.ok ? 'Saved' : 'Could not save. Try again.');
     } catch {
@@ -198,6 +217,12 @@ export default function AdminEventDetail({
 
   const pendingCount = photos.filter((p) => p.syncStatus !== 'synced').length;
   const aiPhotoCount = photos.filter((p) => p.aiLabel).length;
+  const awaiting = photos.filter((p) => p.status === 'pending').length;
+  const shownPhotos = photos.filter((p) => {
+    if (photoFilter === 'pending') return p.status === 'pending';
+    if (photoFilter === 'hidden') return p.status === 'hidden';
+    return true;
+  });
   const poseLockedCost = (allPresets.find((p) => p.id === 'pose-with-us') || {}).lockedCost;
   const liveCost = allPresets
     .filter((p) => enabled.includes(p.id))
@@ -243,7 +268,14 @@ export default function AdminEventDetail({
                     : ''}
                 </span>
               </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <label className="check-row">
+                <input type="checkbox" checked={approvalMode} onChange={() => { setApprovalMode((v) => !v); setSettingsState(''); }} />
+                <span>
+                  <strong>Approve photos before they show</strong>{' '}
+                  <span className="muted">New photos wait in your queue below until you approve them.</span>
+                </span>
+              </label>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 12 }}>
                 <button className="btn btn-primary">Save</button>
                 {settingsState && <span className="muted" role="status">{settingsState}</span>}
               </div>
@@ -409,25 +441,53 @@ export default function AdminEventDetail({
             </form>
 
             <div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, flexWrap: 'wrap', gap: 8 }}>
                 <h2 className="display" style={{ fontSize: 18, margin: 0 }}>
                   Photos ({photos.length}{aiPhotoCount ? `, ${aiPhotoCount} AI` : ''})
                 </h2>
                 {pendingCount > 0 && <span className="muted">{pendingCount} not yet in Drive</span>}
               </div>
-              {photos.length === 0 ? (
+              <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
+                {[
+                  ['all', 'All'],
+                  ['pending', `Waiting for approval${awaiting ? ` (${awaiting})` : ''}`],
+                  ['hidden', 'Hidden'],
+                ].map(([key, label]) => (
+                  <button
+                    key={key}
+                    className={`btn btn-secondary${photoFilter === key ? ' is-active' : ''}`}
+                    style={{ padding: '6px 12px', fontSize: 13 }}
+                    onClick={() => setPhotoFilter(key)}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+              {shownPhotos.length === 0 ? (
                 <div className="card">
-                  <p className="muted" style={{ margin: 0 }}>No photos yet. Share the QR code to get started.</p>
+                  <p className="muted" style={{ margin: 0 }}>
+                    {photos.length === 0 ? 'No photos yet. Share the QR code to get started.' : 'Nothing here.'}
+                  </p>
                 </div>
               ) : (
                 <div className="gallery-grid">
-                  {photos.map((p) => (
-                    <div key={p.id} style={{ position: 'relative' }}>
+                  {shownPhotos.map((p) => (
+                    <div key={p.id} className={`mod-cell${p.status === 'hidden' ? ' is-hidden' : ''}`}>
                       <img src={p.thumbUrl || p.url} alt="" loading="lazy" decoding="async" />
                       {p.aiLabel && <span className="ai-tag">AI · {p.aiLabel}</span>}
-                      {p.syncStatus !== 'synced' && (
+                      {p.status === 'pending' && <span className="sync-tag">waiting</span>}
+                      {p.status === 'hidden' && <span className="sync-tag">hidden</span>}
+                      {p.status !== 'pending' && p.status !== 'hidden' && p.syncStatus !== 'synced' && (
                         <span className="sync-tag">{p.syncStatus === 'failed' ? 'sync failed' : 'not in Drive'}</span>
                       )}
+                      <div className="mod-actions">
+                        {p.status === 'pending' || p.status === 'hidden' ? (
+                          <button onClick={() => setStatus(p.id, 'approved')}>Approve</button>
+                        ) : (
+                          <button onClick={() => setStatus(p.id, 'hidden')}>Hide</button>
+                        )}
+                        <button onClick={() => deletePhoto(p.id)}>Delete</button>
+                      </div>
                     </div>
                   ))}
                 </div>

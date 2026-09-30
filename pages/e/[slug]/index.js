@@ -89,6 +89,7 @@ function CaptureFlow({ event, presets, backdrops, initialRemaining }) {
   const [remaining, setRemaining] = useState(initialRemaining);
   const [message, setMessage] = useState('');
   const [postFailed, setPostFailed] = useState(null); // what we tried to post
+  const [pendingApproval, setPendingApproval] = useState(false);
   const [backdrop, setBackdrop] = useState(null);
 
   useEffect(() => () => photoUrl && URL.revokeObjectURL(photoUrl), [photoUrl]);
@@ -166,6 +167,7 @@ function CaptureFlow({ event, presets, backdrops, initialRemaining }) {
         setStep('postError');
         return;
       }
+      setPendingApproval(Boolean(data.pending));
       setStep('done');
     } catch {
       setPostFailed({ useEdit, error: 'Check your connection and try again.' });
@@ -340,8 +342,14 @@ function CaptureFlow({ event, presets, backdrops, initialRemaining }) {
 
         {step === 'done' && (
           <div style={{ textAlign: 'center', paddingTop: 32 }}>
-            <p className="display" style={{ fontSize: 20, marginBottom: 8 }}>Added to the album</p>
-            <p className="muted" style={{ marginBottom: 24 }}>Thanks for sharing the moment.</p>
+            <p className="display" style={{ fontSize: 20, marginBottom: 8 }}>
+              {pendingApproval ? 'Sent to the host' : 'Added to the album'}
+            </p>
+            <p className="muted" style={{ marginBottom: 24 }}>
+              {pendingApproval
+                ? "It'll appear in the album once the host approves it. Thanks for sharing the moment."
+                : 'Thanks for sharing the moment.'}
+            </p>
             <div style={{ display: 'flex', gap: 12, justifyContent: 'center' }}>
               <button className="btn btn-primary" onClick={startOver}>Add another photo</button>
               <Link href={`/e/${event.slug}/gallery`} className="btn btn-secondary">View album</Link>
