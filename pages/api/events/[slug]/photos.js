@@ -1,4 +1,4 @@
-import { put } from '@vercel/blob';
+import { put, del } from '@vercel/blob';
 import { nanoid } from 'nanoid';
 import {
   getEvent,
@@ -180,5 +180,15 @@ export default async function handler(req, res) {
   }
 
   await addPhoto(slug, photo);
+
+  // The locked "Pose with us" path stages its composite in our own Blob store
+  // so it can be re-uploaded here. Once that's done the staged copy is dead
+  // weight, and at a few hundred edits it adds up against the free tier.
+  if (edit?.tempBlobUrl) {
+    await del(edit.tempBlobUrl).catch((err) =>
+      console.error('Could not remove staged edit blob:', err.message)
+    );
+  }
+
   return res.status(201).json({ photo: publicPhoto(photo) });
 }

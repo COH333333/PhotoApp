@@ -3,11 +3,14 @@ import Head from 'next/head';
 import Link from 'next/link';
 import { isAdminRequest } from '../../../lib/auth';
 import { getEvent, listPhotos, getAiUsage } from '../../../lib/store';
+// Deliberately NOT importing PRESETS or maxCostFor here: referencing them in
+// the rendered component pulls lib/presets into the client bundle, prompts and
+// all, and that bundle is fetchable by any guest. Everything this page needs
+// about the presets is computed in getServerSideProps and passed as props.
 import {
   PRESETS,
   DEFAULT_ENABLED,
   keepsakeTextFor,
-  maxCostFor,
   DEFAULT_COST,
   MAX_BACKDROPS,
 } from '../../../lib/presets';
@@ -33,6 +36,8 @@ export async function getServerSideProps({ req, params }) {
     id,
     label: p.label,
     blurb: p.blurb,
+    cost: p.cost || DEFAULT_COST,
+    lockedCost: p.lockedCost || null,
     needsReferences: p.needs.includes('references'),
     needsBackdrops: p.needs.includes('backdrop'),
   }));
@@ -47,7 +52,7 @@ export async function getServerSideProps({ req, params }) {
       aiUsed: usage.total,
       limits: aiLimitsFor(event),
       defaultKeepsake: keepsakeTextFor({ ...event, keepsakeText: '' }),
-      costPerEdit: maxCostFor(event),
+      defaultCost: DEFAULT_COST,
     },
   };
 }
@@ -61,7 +66,7 @@ export default function AdminEventDetail({
   aiUsed,
   limits,
   defaultKeepsake,
-  costPerEdit,
+  defaultCost,
 }) {
   const [references, setReferences] = useState(event.referencePhotos || []);
   const [backdrops, setBackdrops] = useState(event.backdrops || []);
@@ -72,6 +77,7 @@ export default function AdminEventDetail({
   const [perGuest, setPerGuest] = useState(limits.perGuest);
   const [perEvent, setPerEvent] = useState(limits.perEvent);
   const [keepsakeText, setKeepsakeText] = useState(event.keepsakeText || '');
+  const [lockCouple, setLockCouple] = useState(event.lockCouple !== false);
   const [saveState, setSaveState] = useState('');
 
   async function handleReferenceUpload(e) {
@@ -148,7 +154,13 @@ export default function AdminEventDetail({
       const res = await fetch(`/api/admin/events/${event.slug}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ aiPresets: enabled, aiPerGuest: perGuest, aiPerEvent: perEvent, keepsakeText }),
+        body: JSON.stringify({
+          aiPresets: enabled,
+          aiPerGuest: perGuest,
+          aiPerEvent: perEvent,
+          keepsakeText,
+          lockCouple,
+        }),
       });
       setSaveState(res.ok ? 'Saved' : 'Could not save. Try again.');
     } catch {
@@ -158,7 +170,11 @@ export default function AdminEventDetail({
 
   const pendingCount = photos.filter((p) => p.syncStatus !== 'synced').length;
   const aiPhotoCount = photos.filter((p) => p.aiLabel).length;
-  const maxCost = (Number(perEvent) || 0) * costPerEdit;
+  const poseLockedCost = (allPresets.find((p) => p.id === 'pose-with-us') || {}).lockedCost;
+  const liveCost = allPresets
+    .filter((p) => enabled.includes(p.id))
+    .reduce((max, p) => Math.max(max, lockCouple && p.lockedCost ? p.lockedCost : p.cost), defaultCost);
+  const maxCost = (Number(perEvent) || 0) * liveCost;
 
   return (
     <div className="admin-shell page">
@@ -290,6 +306,25 @@ export default function AdminEventDetail({
                 </div>
               )}
 
+              {enabled.includes('pose-with-us') && (
+                <label className="check-row" style={{ marginTop: 10 }}>
+                  <input
+                    type="checkbox"
+                    checked={lockCouple}
+                    onChange={() => { setLockCouple((v) => !v); setSaveState(''); }}
+                  />
+                  <span>
+                    <strong>Never redraw our photo</strong>{' '}
+                    <span className="muted">
+                      in "Pose with us." Adds empty space for the guests and puts our own photo
+                      back over the result afterwards, so our faces come from the original rather
+                      than the AI. Costs ${poseLockedCost ? poseLockedCost.toFixed(2) : '0.12'} an
+                      edit instead of ${defaultCost.toFixed(2)}, and the join can show a faint seam.
+                    </span>
+                  </span>
+                </label>
+              )}
+
               <div style={{ display: 'flex', gap: 12, marginTop: 12 }}>
                 <div className="field" style={{ flex: 1 }}>
                   <label htmlFor="perGuest">Edits per guest</label>
@@ -304,7 +339,7 @@ export default function AdminEventDetail({
               </div>
               <p className="muted" style={{ marginTop: 0 }}>
                 Most this event can cost: about ${maxCost.toFixed(2)}, using the priciest edit
-                you have switched on at ${costPerEdit.toFixed(2)} each. Simpler edits cost ${DEFAULT_COST.toFixed(2)}.
+                you have switched on at ${liveCost.toFixed(2)} each. Simpler edits cost ${defaultCost.toFixed(2)}.
               </p>
 
               <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>

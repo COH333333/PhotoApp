@@ -37,6 +37,9 @@ export default async function handler(req, res) {
       const v = clampInt(body.aiPerEvent, 0, 5000);
       if (v !== null) patch.aiPerEvent = v;
     }
+    if (body.lockCouple !== undefined) {
+      patch.lockCouple = Boolean(body.lockCouple);
+    }
     if (body.keepsakeText !== undefined) {
       patch.keepsakeText = String(body.keepsakeText).slice(0, 80);
     }
