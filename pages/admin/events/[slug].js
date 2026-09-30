@@ -3,13 +3,12 @@ import Head from 'next/head';
 import Link from 'next/link';
 import { isAdminRequest } from '../../../lib/auth';
 import { getEvent, listPhotos, getAiUsage } from '../../../lib/store';
-import { PRESETS, DEFAULT_ENABLED, keepsakeTextFor } from '../../../lib/presets';
+import { PRESETS, DEFAULT_ENABLED, keepsakeTextFor, maxCostFor, DEFAULT_COST } from '../../../lib/presets';
 import { isAiConfigured } from '../../../lib/fal';
 import { aiLimitsFor } from '../../../lib/aiLimits';
 import { preparePhoto } from '../../../lib/heicConvert';
 import QRCodeCard from '../../../components/QRCodeCard';
 
-const COST_PER_EDIT = 0.08; // Nano Banana 2 on fal at 1K; check fal.ai pricing if you change resolution
 
 export async function getServerSideProps({ req, params }) {
   if (!isAdminRequest(req)) {
@@ -40,6 +39,7 @@ export async function getServerSideProps({ req, params }) {
       aiUsed: usage.total,
       limits: aiLimitsFor(event),
       defaultKeepsake: keepsakeTextFor({ ...event, keepsakeText: '' }),
+      costPerEdit: maxCostFor(event),
     },
   };
 }
@@ -53,6 +53,7 @@ export default function AdminEventDetail({
   aiUsed,
   limits,
   defaultKeepsake,
+  costPerEdit,
 }) {
   const [references, setReferences] = useState(event.referencePhotos || []);
   const [uploading, setUploading] = useState(false);
@@ -116,7 +117,7 @@ export default function AdminEventDetail({
 
   const pendingCount = photos.filter((p) => p.syncStatus !== 'synced').length;
   const aiPhotoCount = photos.filter((p) => p.aiLabel).length;
-  const maxCost = (Number(perEvent) || 0) * COST_PER_EDIT;
+  const maxCost = (Number(perEvent) || 0) * costPerEdit;
 
   return (
     <div className="admin-shell page">
@@ -220,7 +221,8 @@ export default function AdminEventDetail({
                 </div>
               </div>
               <p className="muted" style={{ marginTop: 0 }}>
-                Most this event can cost: about ${maxCost.toFixed(2)} at ${COST_PER_EDIT.toFixed(2)} per edit.
+                Most this event can cost: about ${maxCost.toFixed(2)}, using the priciest edit
+                you have switched on at ${costPerEdit.toFixed(2)} each. Simpler edits cost ${DEFAULT_COST.toFixed(2)}.
               </p>
 
               <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
