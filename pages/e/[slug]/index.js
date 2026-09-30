@@ -10,15 +10,8 @@ import CameraCapture from '../../../components/CameraCapture';
 import LockedEvent from '../../../components/LockedEvent';
 import { guardEventPage } from '../../../lib/access';
 import { uploadsState } from '../../../lib/eventState';
-
-function publicEvent(event) {
-  return {
-    slug: event.slug,
-    name: event.name,
-    primaryColor: event.primaryColor,
-    accentColor: event.accentColor,
-  };
-}
+import { publicEvent } from '../../../lib/publicEvent';
+import EventHeader from '../../../components/EventHeader';
 
 export async function getServerSideProps(ctx) {
   const { params, req, res } = ctx;
@@ -183,12 +176,7 @@ function CaptureFlow({ event, presets, backdrops, initialRemaining }) {
         <title>{`${event.name} - Moment Share`}</title>
       </Head>
       <div className="container" style={{ paddingTop: 32, paddingBottom: 48 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 24 }}>
-          <h1 className="display" style={{ fontSize: 22 }}>{event.name}</h1>
-          <Link href={`/e/${event.slug}/gallery`} className="muted" style={{ textDecoration: 'none' }}>
-            View album
-          </Link>
-        </div>
+        <EventHeader event={event} linkHref={`/e/${event.slug}/gallery`} linkLabel="View album" showWelcome={step === 'capture'} />
 
         {step === 'capture' && (
           <div style={{ paddingTop: 24 }}>
@@ -241,7 +229,7 @@ function CaptureFlow({ event, presets, backdrops, initialRemaining }) {
               Which photo do you want to be in?
             </p>
             <p className="muted" style={{ textAlign: 'center', marginTop: 0, marginBottom: 14 }}>
-              Everyone in the photo you just took gets added, standing with us.
+              Everyone in the photo you just took gets added, standing with {event.subject}.
             </p>
             <div className="your-photo">
               <img src={photoUrl} alt="The photo you just took" />
@@ -264,7 +252,7 @@ function CaptureFlow({ event, presets, backdrops, initialRemaining }) {
                     runEdit(preset, null, b);
                   }}
                 >
-                  <img src={b.url} alt="Wedding portrait" loading="lazy" />
+                  <img src={b.url} alt="Portrait" loading="lazy" />
                 </button>
               ))}
             </div>

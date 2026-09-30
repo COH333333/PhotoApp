@@ -551,3 +551,19 @@ textarea:focus-visible {
   border-color: var(--event-accent, #e2a73b);
   color: var(--event-accent, #e2a73b);
 }
+
+/* Cover banner on guest pages */
+.cover {
+  margin: 0 0 16px;
+  border-radius: 6px;
+  overflow: hidden;
+  aspect-ratio: 16 / 7;
+  background: var(--paper-dim, #e9e9e4);
+}
+
+.cover img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}

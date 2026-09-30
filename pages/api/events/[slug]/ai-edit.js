@@ -9,7 +9,9 @@ import {
   PRESETS,
   publicPresets,
   keepsakeTextFor,
+  presetLabel,
 } from '../../../../lib/presets';
+import { subjectFor } from '../../../../lib/templates';
 import { runEdit, isAiConfigured } from '../../../../lib/fal';
 import { aiLimitsFor } from '../../../../lib/aiLimits';
 import { padForGuests, restoreOriginal } from '../../../../lib/composite';
@@ -145,7 +147,11 @@ export default async function handler(req, res) {
     const prompt = build({
       referenceCount: references.length,
       keepsakeText: keepsakeTextFor(event),
+      subject: subjectFor(event),
     });
+    if (/NaN|undefined|\[object/.test(prompt)) {
+      throw new Error(`Prompt for ${presetId} is malformed`);
+    }
 
     result = await runEdit({
       prompt,
@@ -194,7 +200,7 @@ export default async function handler(req, res) {
     slug,
     guestId,
     preset: presetId,
-    label: preset.label,
+    label: presetLabel(presetId, event),
     resultUrl: result.url,
     // True only when the couple's own pixels were composited back. False means
     // the model's version of them is what the guest is looking at.

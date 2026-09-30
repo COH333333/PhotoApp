@@ -2,6 +2,7 @@ import { getEvent } from '../../../../lib/store';
 import { publicPresets, publicBackdrops } from '../../../../lib/presets';
 import { requireAccess } from '../../../../lib/access';
 import { uploadsState } from '../../../../lib/eventState';
+import { publicEvent } from '../../../../lib/publicEvent';
 
 export default async function handler(req, res) {
   if (req.method !== 'GET') return res.status(405).end();
@@ -14,11 +15,7 @@ export default async function handler(req, res) {
   // photo URLs stay server-side.
   res.status(200).json({
     event: {
-      slug: event.slug,
-      name: event.name,
-      date: event.date,
-      primaryColor: event.primaryColor,
-      accentColor: event.accentColor,
+      ...publicEvent(event),
       presets: publicPresets(event),
       backdrops: publicBackdrops(event),
       uploads: uploadsState(event),

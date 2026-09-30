@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { isAdminRequest } from '../../lib/auth';
 import { listEvents } from '../../lib/store';
 import { isDriveConnected } from '../../lib/drive';
+import { templateOptions, DEFAULT_TEMPLATE } from '../../lib/templates';
 
 export async function getServerSideProps({ req }) {
   if (!isAdminRequest(req)) {
@@ -11,11 +12,12 @@ export async function getServerSideProps({ req }) {
   }
   const events = await listEvents();
   const driveConnected = await isDriveConnected();
-  return { props: { events, driveConnected } };
+  return { props: { events, driveConnected, templates: templateOptions() } };
 }
 
-export default function AdminDashboard({ events, driveConnected }) {
+export default function AdminDashboard({ events, driveConnected, templates }) {
   const [name, setName] = useState('');
+  const [type, setType] = useState(DEFAULT_TEMPLATE);
   const [date, setDate] = useState('');
   const [creating, setCreating] = useState(false);
   const [list, setList] = useState(events);
@@ -28,7 +30,7 @@ export default function AdminDashboard({ events, driveConnected }) {
     const res = await fetch('/api/admin/events', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, date }),
+      body: JSON.stringify({ name, date, type }),
     });
     setCreating(false);
     if (res.ok) {
@@ -112,6 +114,17 @@ export default function AdminDashboard({ events, driveConnected }) {
               />
             </div>
             <div className="field">
+              <label htmlFor="type">Type of event</label>
+              <select id="type" value={type} onChange={(e) => setType(e.target.value)}>
+                {templates.map((t) => (
+                  <option key={t.id} value={t.id}>{t.label}</option>
+                ))}
+              </select>
+              <span className="muted" style={{ fontSize: 12.5 }}>
+                Sets which AI edits are on, the colours, and a starter list of photo challenges. All editable later.
+              </span>
+            </div>
+            <div className="field">
               <label htmlFor="date">Date</label>
               <input id="date" type="date" value={date} onChange={(e) => setDate(e.target.value)} />
             </div>
@@ -141,7 +154,7 @@ export default function AdminDashboard({ events, driveConnected }) {
                     <div className="display" style={{ fontSize: 18 }}>
                       {ev.name}
                     </div>
-                    <div className="muted">{ev.date || 'No date set'}</div>
+                    <div className="muted">{ev.date || 'No date set'}{ev.type ? ` · ${ev.type}` : ''}</div>
                   </div>
                   <span
                     style={{

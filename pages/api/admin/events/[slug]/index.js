@@ -1,7 +1,9 @@
+import { nanoid } from 'nanoid';
 import { isAdminRequest } from '../../../../../lib/auth';
 import { getEvent, updateEvent, listAllPhotos } from '../../../../../lib/store';
 import { PRESETS } from '../../../../../lib/presets';
 import { UPLOAD_MODES } from '../../../../../lib/eventState';
+import { TEMPLATES } from '../../../../../lib/templates';
 
 function clampInt(value, min, max) {
   if (value === '' || value === null) return null; // blank field: leave as is
@@ -24,8 +26,24 @@ export default async function handler(req, res) {
   if (req.method === 'PATCH') {
     const body = req.body || {};
     const patch = {};
-    for (const key of ['name', 'date', 'primaryColor', 'accentColor']) {
-      if (body[key] !== undefined) patch[key] = body[key];
+    for (const key of ['name', 'date']) {
+      if (body[key] !== undefined) patch[key] = String(body[key]).slice(0, 120);
+    }
+    for (const key of ['primaryColor', 'accentColor']) {
+      if (typeof body[key] === 'string' && /^#[0-9a-fA-F]{6}$/.test(body[key])) patch[key] = body[key];
+    }
+    if (body.type !== undefined && TEMPLATES[body.type]) patch.type = body.type;
+    if (body.subject !== undefined) patch.subject = String(body.subject).replace(/["`\r\n]+/g, ' ').trim().slice(0, 60);
+    if (body.welcome !== undefined) patch.welcome = String(body.welcome).trim().slice(0, 240);
+    if (body.hashtag !== undefined) {
+      const tag = String(body.hashtag).trim().replace(/\s+/g, '').slice(0, 40);
+      patch.hashtag = tag && !tag.startsWith('#') ? `#${tag}` : tag;
+    }
+    if (Array.isArray(body.challenges)) {
+      patch.challenges = body.challenges
+        .filter((c) => c && typeof c.text === 'string' && c.text.trim())
+        .slice(0, 20)
+        .map((c) => ({ id: /^[A-Za-z0-9_-]{4,16}$/.test(c.id || '') ? c.id : nanoid(8), text: c.text.trim().slice(0, 100) }));
     }
     if (Array.isArray(body.aiPresets)) {
       patch.aiPresets = body.aiPresets.filter((id) => PRESETS[id]);

@@ -1,21 +1,17 @@
 import Head from 'next/head';
-import Link from 'next/link';
 import { getEvent, pagePhotos, publicPhoto } from '../../../lib/store';
 import PhotoGallery from '../../../components/PhotoGallery';
 import LockedEvent from '../../../components/LockedEvent';
 import { guardEventPage } from '../../../lib/access';
 import { uploadsOpen } from '../../../lib/eventState';
+import { publicEvent as toPublic } from '../../../lib/publicEvent';
+import EventHeader from '../../../components/EventHeader';
 
 export async function getServerSideProps(ctx) {
   const { params } = ctx;
   const event = await getEvent(params.slug);
   if (!event) return { notFound: true };
-  const publicEvent = {
-    slug: event.slug,
-    name: event.name,
-    primaryColor: event.primaryColor,
-    accentColor: event.accentColor,
-  };
+  const publicEvent = toPublic(event);
   const guard = guardEventPage(ctx, event);
   if (guard.redirect) return { redirect: guard.redirect };
   if (guard.locked) return { props: { event: publicEvent, locked: true } };
@@ -46,18 +42,12 @@ function Gallery({ event, canUpload, initialPhotos, initialHasMore }) {
         <title>{`${event.name} album - Moment Share`}</title>
       </Head>
       <div className="container" style={{ paddingTop: 32, paddingBottom: 48 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 24 }}>
-          <h1 className="display" style={{ fontSize: 22 }}>
-            {event.name}
-          </h1>
-          {canUpload ? (
-            <Link href={`/e/${event.slug}`} className="muted" style={{ textDecoration: 'none' }}>
-              &larr; Add a photo
-            </Link>
-          ) : (
-            <span className="muted" style={{ fontSize: 13 }}>Uploads closed</span>
-          )}
-        </div>
+        <EventHeader
+          event={event}
+          linkHref={canUpload ? `/e/${event.slug}` : null}
+          linkLabel="Add a photo"
+        />
+        {!canUpload && <p className="muted" style={{ marginTop: -8, fontSize: 13 }}>Uploads have closed. Tap any photo to save or share it.</p>}
         <PhotoGallery slug={event.slug} initialPhotos={initialPhotos} initialHasMore={initialHasMore} />
       </div>
     </div>

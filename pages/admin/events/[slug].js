@@ -8,12 +8,13 @@ import { getEvent, listAllPhotos, getAiUsage } from '../../../lib/store';
 // all, and that bundle is fetchable by any guest. Everything this page needs
 // about the presets is computed in getServerSideProps and passed as props.
 import {
-  PRESETS,
+  presetSummaries,
   DEFAULT_ENABLED,
   keepsakeTextFor,
   DEFAULT_COST,
   MAX_BACKDROPS,
 } from '../../../lib/presets';
+import { templateOptions, subjectFor } from '../../../lib/templates';
 import { isAiConfigured } from '../../../lib/fal';
 import { aiLimitsFor } from '../../../lib/aiLimits';
 import { preparePhoto } from '../../../lib/heicConvert';
@@ -36,15 +37,7 @@ export async function getServerSideProps({ req, params }) {
   const guestUrl = guestLink(origin, event);
   const albumUrl = albumLink(origin, event);
 
-  const allPresets = Object.entries(PRESETS).map(([id, p]) => ({
-    id,
-    label: p.label,
-    blurb: p.blurb,
-    cost: p.cost || DEFAULT_COST,
-    lockedCost: p.lockedCost || null,
-    needsReferences: p.needs.includes('references'),
-    needsBackdrops: p.needs.includes('backdrop'),
-  }));
+  const allPresets = presetSummaries(event);
 
   return {
     props: {
@@ -54,6 +47,8 @@ export async function getServerSideProps({ req, params }) {
       albumUrl,
       uploads: uploadsState(event),
       allPresets,
+      templates: templateOptions(),
+      subject: subjectFor(event),
       aiConfigured: isAiConfigured(),
       aiUsed: usage.total,
       limits: aiLimitsFor(event),
@@ -70,6 +65,8 @@ export default function AdminEventDetail({
   albumUrl,
   uploads,
   allPresets,
+  templates,
+  subject,
   aiConfigured,
   aiUsed,
   limits,
@@ -92,7 +89,38 @@ export default function AdminEventDetail({
   const [date, setDate] = useState(event.date || '');
   const [uploadsMode, setUploadsMode] = useState(uploads.mode);
   const [approvalMode, setApprovalMode] = useState(event.approvalMode === true);
+  const [type, setType] = useState(event.type || 'wedding');
+  const [subjectText, setSubjectText] = useState(event.subject || subject);
+  const [welcome, setWelcome] = useState(event.welcome || '');
+  const [hashtag, setHashtag] = useState(event.hashtag || '');
+  const [primaryColor, setPrimaryColor] = useState(event.primaryColor || '#1f6f63');
+  const [accentColor, setAccentColor] = useState(event.accentColor || '#e2a73b');
+  const [coverUrl, setCoverUrl] = useState(event.coverUrl || null);
+  const [uploadingCover, setUploadingCover] = useState(false);
   const [settingsState, setSettingsState] = useState('');
+
+  async function handleCoverUpload(e) {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    setUploadingCover(true);
+    try {
+      const prepared = await preparePhoto(file);
+      const form = new FormData();
+      form.append('photo', prepared, 'cover.jpg');
+      const res = await fetch(`/api/admin/events/${event.slug}/cover`, { method: 'POST', body: form });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) alert(data.error || 'Could not upload that photo.');
+      else setCoverUrl(data.event.coverUrl);
+    } finally {
+      setUploadingCover(false);
+    }
+  }
+
+  async function removeCover() {
+    const res = await fetch(`/api/admin/events/${event.slug}/cover`, { method: 'DELETE' });
+    if (res.ok) setCoverUrl(null);
+  }
 
   const [photos, setPhotos] = useState(initialPhotos);
   const [photoFilter, setPhotoFilter] = useState('all');
@@ -119,9 +147,11 @@ export default function AdminEventDetail({
       const res = await fetch(`/api/admin/events/${event.slug}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, date, uploadsMode, approvalMode }),
+        body: JSON.stringify({
+          name, date, uploadsMode, approvalMode, type, subject: subjectText, welcome, hashtag, primaryColor, accentColor,
+        }),
       });
-      setSettingsState(res.ok ? 'Saved' : 'Could not save. Try again.');
+      setSettingsState(res.ok ? 'Saved. Reload to see updated edit names.' : 'Could not save. Try again.');
     } catch {
       setSettingsState('Could not save. Check your connection.');
     }
@@ -255,6 +285,75 @@ export default function AdminEventDetail({
                 <input id="ev-date" type="date" value={date} onChange={(e) => { setDate(e.target.value); setSettingsState(''); }} />
               </div>
               <div className="field">
+                <label htmlFor="ev-type">Type of event</label>
+                <select id="ev-type" value={type} onChange={(e) => { setType(e.target.value); setSettingsState(''); }}>
+                  {templates.map((t) => (
+                    <option key={t.id} value={t.id}>{t.label}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="field">
+                <label htmlFor="ev-subject">Who the event is for</label>
+                <input
+                  id="ev-subject"
+                  value={subjectText}
+                  maxLength={60}
+                  placeholder="the couple"
+                  onChange={(e) => { setSubjectText(e.target.value); setSettingsState(''); }}
+                />
+                <span className="muted" style={{ fontSize: 12.5 }}>
+                  Used in the edit names and the AI instructions: "Pose with {subjectText || subject}",
+                  "Add {subjectText || subject}". A name works too: "Mai" or "Grandma Lan".
+                </span>
+              </div>
+              <div className="field">
+                <label htmlFor="ev-welcome">Welcome line</label>
+                <textarea
+                  id="ev-welcome"
+                  rows={2}
+                  value={welcome}
+                  maxLength={240}
+                  onChange={(e) => { setWelcome(e.target.value); setSettingsState(''); }}
+                />
+              </div>
+              <div className="field">
+                <label htmlFor="ev-hashtag">Hashtag</label>
+                <input
+                  id="ev-hashtag"
+                  value={hashtag}
+                  maxLength={40}
+                  placeholder="#WendyAndTrung"
+                  onChange={(e) => { setHashtag(e.target.value); setSettingsState(''); }}
+                />
+                <span className="muted" style={{ fontSize: 12.5 }}>Printed on the Post and Story share sizes.</span>
+              </div>
+              <div style={{ display: 'flex', gap: 12 }}>
+                <div className="field" style={{ flex: 1 }}>
+                  <label htmlFor="ev-primary">Main colour</label>
+                  <input id="ev-primary" type="color" value={primaryColor} onChange={(e) => { setPrimaryColor(e.target.value); setSettingsState(''); }} />
+                </div>
+                <div className="field" style={{ flex: 1 }}>
+                  <label htmlFor="ev-accent">Accent colour</label>
+                  <input id="ev-accent" type="color" value={accentColor} onChange={(e) => { setAccentColor(e.target.value); setSettingsState(''); }} />
+                </div>
+              </div>
+              <div className="field">
+                <label>Cover photo</label>
+                {coverUrl && (
+                  <img src={coverUrl} alt="Cover" style={{ width: '100%', aspectRatio: '16 / 9', objectFit: 'cover', borderRadius: 3 }} />
+                )}
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <label className="btn btn-secondary" style={{ cursor: 'pointer', flex: 1, textAlign: 'center' }}>
+                    {uploadingCover ? 'Uploading…' : coverUrl ? 'Replace' : 'Add a cover photo'}
+                    <input type="file" accept="image/*,.heic,.heif" onChange={handleCoverUpload} style={{ display: 'none' }} disabled={uploadingCover} />
+                  </label>
+                  {coverUrl && (
+                    <button type="button" className="btn btn-secondary" onClick={removeCover}>Remove</button>
+                  )}
+                </div>
+                <span className="muted" style={{ fontSize: 12.5 }}>Shown at the top of the guest pages and on the live wall.</span>
+              </div>
+              <div className="field">
                 <label htmlFor="ev-uploads">Uploads</label>
                 <select id="ev-uploads" value={uploadsMode} onChange={(e) => { setUploadsMode(e.target.value); setSettingsState(''); }}>
                   <option value="auto">Close 7 days after the event date</option>
@@ -282,10 +381,10 @@ export default function AdminEventDetail({
             </form>
 
             <div className="card">
-              <h2 className="display" style={{ fontSize: 16, marginTop: 0 }}>Couple reference photos</h2>
+              <h2 className="display" style={{ fontSize: 16, marginTop: 0 }}>Reference photos of {subject}</h2>
               <p className="muted" style={{ marginTop: 0 }}>
-                Used by "Add the couple." Upload 3 to 6 clear photos of you both: faces visible, a mix of
-                full-length and closer shots, in the outfits you'll wear. Ordinary photos are fine.
+                Used by "Add {subject}." Upload 3 to 6 clear photos: faces visible, a mix of
+                full-length and closer shots, in the outfits for the day. Ordinary photos are fine.
               </p>
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
                 {references.map((r) => (
@@ -315,9 +414,9 @@ export default function AdminEventDetail({
             <div className="card">
               <h2 className="display" style={{ fontSize: 16, marginTop: 0 }}>Portraits to pose with</h2>
               <p className="muted" style={{ marginTop: 0 }}>
-                Used by "Pose with us." Guests pick one of these and get added standing beside you.
-                Your photo stays exactly as it is, so choose ones you love. Leave some space around
-                you in the frame — that's where the guest goes.
+                Used by "Pose with {subject}." Guests pick one of these and get added standing
+                beside {subject}. The photo stays exactly as it is, so choose ones you love. Leave
+                some space in the frame — that's where the guest goes.
               </p>
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
                 {backdrops.map((b) => (
@@ -406,10 +505,10 @@ export default function AdminEventDetail({
                   <span>
                     <strong>Add guests in a separate space</strong>{' '}
                     <span className="muted">
-                      in "Pose with us." Widens the photo and puts guests in the new area, then
-                      lays our original back over its half, so our faces are never redrawn. The
+                      in "Pose with {subject}." Widens the photo and puts guests in the new area, then
+                      lays the original back over its half, so faces are never redrawn. The
                       cost is how it looks: guests stand in an adjoining space rather than in the
-                      scene with us. Off by default, because sharing the scene reads far better.
+                      scene. Off by default, because sharing the scene reads far better.
                       ${poseLockedCost ? poseLockedCost.toFixed(2) : '0.12'} an edit instead of{' '}
                       ${defaultCost.toFixed(2)}.
                     </span>
