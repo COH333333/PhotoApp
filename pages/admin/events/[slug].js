@@ -77,7 +77,7 @@ export default function AdminEventDetail({
   const [perGuest, setPerGuest] = useState(limits.perGuest);
   const [perEvent, setPerEvent] = useState(limits.perEvent);
   const [keepsakeText, setKeepsakeText] = useState(event.keepsakeText || '');
-  const [lockCouple, setLockCouple] = useState(event.lockCouple !== false);
+  const [lockCouple, setLockCouple] = useState(event.lockCouple === true);
   const [saveState, setSaveState] = useState('');
 
   async function handleReferenceUpload(e) {
@@ -314,12 +314,14 @@ export default function AdminEventDetail({
                     onChange={() => { setLockCouple((v) => !v); setSaveState(''); }}
                   />
                   <span>
-                    <strong>Never redraw our photo</strong>{' '}
+                    <strong>Add guests in a separate space</strong>{' '}
                     <span className="muted">
-                      in "Pose with us." Adds empty space for the guests and puts our own photo
-                      back over the result afterwards, so our faces come from the original rather
-                      than the AI. Costs ${poseLockedCost ? poseLockedCost.toFixed(2) : '0.12'} an
-                      edit instead of ${defaultCost.toFixed(2)}, and the join can show a faint seam.
+                      in "Pose with us." Widens the photo and puts guests in the new area, then
+                      lays our original back over its half, so our faces are never redrawn. The
+                      cost is how it looks: guests stand in an adjoining space rather than in the
+                      scene with us. Off by default, because sharing the scene reads far better.
+                      ${poseLockedCost ? poseLockedCost.toFixed(2) : '0.12'} an edit instead of{' '}
+                      ${defaultCost.toFixed(2)}.
                     </span>
                   </span>
                 </label>

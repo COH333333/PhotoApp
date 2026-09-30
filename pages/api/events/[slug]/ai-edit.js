@@ -83,7 +83,7 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: 'This edit needs a selfie too.' });
   }
 
-  const locked = event.lockCouple !== false;
+  const locked = event.lockCouple === true;
   let backdrop = null;
   if (preset.needs.includes('backdrop')) {
     backdrop = (event.backdrops || []).find((b) => b.id === fields.backdropId);
