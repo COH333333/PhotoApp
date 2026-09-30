@@ -2,7 +2,11 @@ import { nanoid } from 'nanoid';
 import { getEvent, reserveAiEdit, releaseAiEdit, saveEdit, getAiUsage } from '../../../../lib/store';
 import { parseMultipart } from '../../../../lib/parseForm';
 import { readGuestId } from '../../../../lib/guest';
-import { PRESETS, publicPresets, keepsakeTextFor } from '../../../../lib/presets';
+import {
+  PRESETS,
+  publicPresets,
+  keepsakeTextFor,
+} from '../../../../lib/presets';
 import { runEdit, isAiConfigured } from '../../../../lib/fal';
 import { aiLimitsFor } from '../../../../lib/aiLimits';
 
@@ -101,6 +105,7 @@ export default async function handler(req, res) {
     const prompt = preset.buildPrompt({
       referenceCount: references.length,
       keepsakeText: keepsakeTextFor(event),
+      placement: fields.placement,
     });
 
     result = await runEdit({ prompt, imageUrls, model: preset.model });

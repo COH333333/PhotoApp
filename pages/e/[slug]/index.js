@@ -2,7 +2,12 @@ import { useEffect, useState } from 'react';
 import Head from 'next/head';
 import Link from 'next/link';
 import { getEvent, getAiUsage } from '../../../lib/store';
-import { publicPresets, publicBackdrops } from '../../../lib/presets';
+import {
+  publicPresets,
+  publicBackdrops,
+  PLACEMENT_CHOICES,
+  DEFAULT_PLACEMENT,
+} from '../../../lib/presets';
 import { isAiConfigured } from '../../../lib/fal';
 import { getOrCreateGuestId } from '../../../lib/guest';
 import { aiLimitsFor } from '../../../lib/aiLimits';
@@ -50,6 +55,7 @@ export default function GuestCapturePage({ event, presets, backdrops, initialRem
   const [message, setMessage] = useState('');
   const [postFailed, setPostFailed] = useState(null); // what we tried to post
   const [backdrop, setBackdrop] = useState(null);
+  const [placement, setPlacement] = useState(DEFAULT_PLACEMENT);
 
   useEffect(() => () => photoUrl && URL.revokeObjectURL(photoUrl), [photoUrl]);
 
@@ -62,6 +68,7 @@ export default function GuestCapturePage({ event, presets, backdrops, initialRem
     setMessage('');
     setPostFailed(null);
     setBackdrop(null);
+    setPlacement(DEFAULT_PLACEMENT);
     setStep('capture');
   }
 
@@ -88,7 +95,10 @@ export default function GuestCapturePage({ event, presets, backdrops, initialRem
     form.append('preset', p.id);
     form.append('photo', photo, 'photo.jpg');
     if (selfie) form.append('selfie', selfie, 'selfie.jpg');
-    if (chosenBackdrop) form.append('backdropId', chosenBackdrop.id);
+    if (chosenBackdrop) {
+      form.append('backdropId', chosenBackdrop.id);
+      form.append('placement', placement);
+    }
     try {
       const res = await fetch(`/api/events/${event.slug}/ai-edit`, { method: 'POST', body: form });
       const data = await res.json().catch(() => ({}));
@@ -195,7 +205,7 @@ export default function GuestCapturePage({ event, presets, backdrops, initialRem
               Which photo do you want to be in?
             </p>
             <p className="muted" style={{ textAlign: 'center', marginTop: 0, marginBottom: 14 }}>
-              You'll be added standing beside us, using the photo you just took.
+              Everyone in the photo you just took gets added, standing with us.
             </p>
             <div className="your-photo">
               <img src={photoUrl} alt="The photo you just took" />
@@ -203,6 +213,22 @@ export default function GuestCapturePage({ event, presets, backdrops, initialRem
                 This is who gets added. If it isn't a photo of you, go back and take one.
               </span>
             </div>
+            <fieldset className="placement">
+              <legend>Where do you want to stand?</legend>
+              <div className="placement-row">
+                {PLACEMENT_CHOICES.map((c) => (
+                  <button
+                    key={c.id}
+                    type="button"
+                    className="placement-chip"
+                    aria-pressed={placement === c.id}
+                    onClick={() => setPlacement(c.id)}
+                  >
+                    {c.label}
+                  </button>
+                ))}
+              </div>
+            </fieldset>
             {backdrops.length === 0 && (
               <p className="notice" role="status">
                 Those photos aren't available right now. You can still post your own.
