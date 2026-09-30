@@ -16,7 +16,8 @@ import {
 } from '../../../lib/presets';
 import { templateOptions, subjectFor } from '../../../lib/templates';
 import { isAiConfigured } from '../../../lib/fal';
-import { aiLimitsFor } from '../../../lib/aiLimits';
+import { aiLimitsFor, videoLimitsFor } from '../../../lib/aiLimits';
+import { isStreamConfigured, MAX_VIDEO_SECONDS } from '../../../lib/stream';
 import { preparePhoto } from '../../../lib/heicConvert';
 import QRCodeCard from '../../../components/QRCodeCard';
 import { guestLink, albumLink, wallLink } from '../../../lib/access';
@@ -52,6 +53,9 @@ export async function getServerSideProps({ req, params }) {
       templates: templateOptions(),
       subject: subjectFor(event),
       aiConfigured: isAiConfigured(),
+      videoConfigured: isStreamConfigured(),
+      videoLimits: videoLimitsFor(event),
+      maxVideoSeconds: MAX_VIDEO_SECONDS,
       aiUsed: usage.total,
       limits: aiLimitsFor(event),
       defaultKeepsake: keepsakeTextFor({ ...event, keepsakeText: '' }),
@@ -71,6 +75,9 @@ export default function AdminEventDetail({
   templates,
   subject,
   aiConfigured,
+  videoConfigured,
+  videoLimits,
+  maxVideoSeconds,
   aiUsed,
   limits,
   defaultKeepsake,
@@ -92,6 +99,7 @@ export default function AdminEventDetail({
   const [date, setDate] = useState(event.date || '');
   const [uploadsMode, setUploadsMode] = useState(uploads.mode);
   const [approvalMode, setApprovalMode] = useState(event.approvalMode === true);
+  const [videosEnabled, setVideosEnabled] = useState(event.videosEnabled !== false);
   const [type, setType] = useState(event.type || 'wedding');
   const [subjectText, setSubjectText] = useState(event.subject || subject);
   const [welcome, setWelcome] = useState(event.welcome || '');
@@ -165,6 +173,7 @@ export default function AdminEventDetail({
         body: JSON.stringify({
           name, date, uploadsMode, approvalMode, type, subject: subjectText, welcome, hashtag, primaryColor, accentColor,
           challenges: challengesFromText(),
+          videosEnabled,
         }),
       });
       setSettingsState(res.ok ? 'Saved. Reload to see updated edit names.' : 'Could not save. Try again.');
@@ -261,7 +270,7 @@ export default function AdminEventDetail({
     }
   }
 
-  const pendingCount = photos.filter((p) => p.syncStatus !== 'synced').length;
+  const pendingCount = photos.filter((p) => p.kind !== 'video' && p.syncStatus !== 'synced').length;
   const aiPhotoCount = photos.filter((p) => p.aiLabel).length;
   const awaiting = photos.filter((p) => p.status === 'pending').length;
   const shownPhotos = photos.filter((p) => {
@@ -397,6 +406,16 @@ export default function AdminEventDetail({
                   filtered by them. Leave empty to turn challenges off.
                 </span>
               </div>
+              <label className="check-row">
+                <input type="checkbox" checked={videosEnabled} onChange={() => { setVideosEnabled((v) => !v); setSettingsState(''); }} />
+                <span>
+                  <strong>Allow video clips</strong>{' '}
+                  <span className="muted">
+                    Up to {maxVideoSeconds} seconds each, {videoLimits.perGuest} per guest.
+                    {videoConfigured ? '' : ' Not active yet: add CF_ACCOUNT_ID and CF_STREAM_TOKEN in Vercel.'}
+                  </span>
+                </span>
+              </label>
               <label className="check-row">
                 <input type="checkbox" checked={approvalMode} onChange={() => { setApprovalMode((v) => !v); setSettingsState(''); }} />
                 <span>
@@ -604,9 +623,10 @@ export default function AdminEventDetail({
                     <div key={p.id} className={`mod-cell${p.status === 'hidden' ? ' is-hidden' : ''}`}>
                       <img src={p.thumbUrl || p.url} alt="" loading="lazy" decoding="async" />
                       {p.aiLabel && <span className="ai-tag">AI · {p.aiLabel}</span>}
+                      {p.kind === 'video' && <span className="video-badge">▶ video</span>}
                       {p.status === 'pending' && <span className="sync-tag">waiting</span>}
                       {p.status === 'hidden' && <span className="sync-tag">hidden</span>}
-                      {p.status !== 'pending' && p.status !== 'hidden' && p.syncStatus !== 'synced' && (
+                      {p.status !== 'pending' && p.status !== 'hidden' && p.kind !== 'video' && p.syncStatus !== 'synced' && (
                         <span className="sync-tag">{p.syncStatus === 'failed' ? 'sync failed' : 'not in Drive'}</span>
                       )}
                       <div className="mod-actions">

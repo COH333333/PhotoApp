@@ -52,6 +52,7 @@ export default async function handler(req, res) {
       backdrops: [],
       challenges: template.challenges.map((text) => ({ id: nanoid(8), text })),
       approvalMode: false,
+      videosEnabled: true,
       aiPresets: template.presets,
       aiPerGuest: AI_DEFAULTS.perGuest,
       aiPerEvent: AI_DEFAULTS.perEvent,

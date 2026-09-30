@@ -70,6 +70,12 @@ Project → Settings → Environment Variables:
 | `DRIVE_ROOT_FOLDER_ID` | from step 4 |
 | `FAL_KEY` | from step 5 |
 | `FAL_RESOLUTION` | optional: `1K` (default, $0.08/edit), `2K` ($0.12), `4K` ($0.16) |
+| `CF_ACCOUNT_ID` | optional, for video clips: Cloudflare account ID (Stream overview page) |
+| `CF_STREAM_TOKEN` | optional, for video clips: API token with **Stream: Edit** |
+
+Video clips (up to 20 seconds) upload straight from the phone to Cloudflare
+Stream, which converts them so they play on every device. Without the two
+`CF_` variables the "Record a video" option simply doesn't appear.
 
 Then click **Deploy**.
 

@@ -56,6 +56,9 @@ export default async function handler(req, res) {
       const v = clampInt(body.aiPerEvent, 0, 5000);
       if (v !== null) patch.aiPerEvent = v;
     }
+    if (body.videosEnabled !== undefined) {
+      patch.videosEnabled = Boolean(body.videosEnabled);
+    }
     if (body.approvalMode !== undefined) {
       patch.approvalMode = Boolean(body.approvalMode);
     }

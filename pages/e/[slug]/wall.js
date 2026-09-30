@@ -65,15 +65,17 @@ function Wall({ event, qrSvg, initialPhotos }) {
     return () => clearInterval(t);
   }, [event.slug]);
 
-  // Slideshow through the recent set.
+  // Slideshow through the recent set. A clip stays up for its own length.
+  const current = fresh || photos[index] || null;
   useEffect(() => {
     if (photos.length === 0) return undefined;
-    const t = setInterval(() => {
+    const hold = current?.kind === 'video' && current.duration ? Math.min(current.duration, 20) * 1000 + 500 : SLIDE_MS;
+    const t = setTimeout(() => {
       setFresh(null);
       setIndex((i) => (i + 1) % photos.length);
-    }, SLIDE_MS);
-    return () => clearInterval(t);
-  }, [photos.length, fresh]);
+    }, hold);
+    return () => clearTimeout(t);
+  }, [photos.length, fresh, index, current?.id]);
 
   useEffect(() => {
     function onKey(e) {
@@ -89,7 +91,6 @@ function Wall({ event, qrSvg, initialPhotos }) {
     else el.requestFullscreen?.();
   }
 
-  const current = fresh || photos[index] || null;
   const strip = photos.slice(0, 12);
 
   return (
@@ -98,7 +99,15 @@ function Wall({ event, qrSvg, initialPhotos }) {
         <title>{`${event.name} - live wall`}</title>
       </Head>
       <div className="wall-main">
-        {current ? (
+        {current && current.kind === 'video' && current.ready && current.playerUrl ? (
+          <iframe
+            key={current.id}
+            src={`${current.playerUrl}?autoplay=true&muted=true&loop=true&controls=false`}
+            className="wall-video"
+            allow="autoplay"
+            title="Video clip"
+          />
+        ) : current ? (
           <img key={current.id} src={current.mediumUrl || current.url} alt="" className="wall-photo" />
         ) : (
           <div className="wall-empty">
@@ -135,6 +144,7 @@ function Wall({ event, qrSvg, initialPhotos }) {
           box-shadow: 0 20px 60px rgba(0,0,0,0.5); animation: wall-in 700ms ease-out;
         }
         @keyframes wall-in { from { opacity: 0; transform: scale(0.98); } to { opacity: 1; transform: none; } }
+        .wall-video { width: 96%; height: 92vh; border: 0; border-radius: 4px; background: #000; animation: wall-in 700ms ease-out; }
         .wall-empty { font-size: 2vw; color: rgba(245,245,242,0.5); }
         .wall-tag, .wall-new {
           position: absolute; bottom: 4vh; font-family: system-ui, sans-serif; font-size: 1.1vw;

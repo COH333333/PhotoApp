@@ -13,6 +13,8 @@ import { uploadsState } from '../../../lib/eventState';
 import { publicEvent } from '../../../lib/publicEvent';
 import EventHeader from '../../../components/EventHeader';
 import ChallengeChips, { useCompleted } from '../../../components/ChallengeChips';
+import { isStreamConfigured, MAX_VIDEO_SECONDS, MAX_VIDEO_BYTES } from '../../../lib/stream';
+import { readVideoDuration, uploadToStream } from '../../../lib/videoUpload';
 
 export async function getServerSideProps(ctx) {
   const { params, req, res } = ctx;
@@ -45,15 +47,16 @@ export async function getServerSideProps(ctx) {
       presets,
       backdrops: presets.length ? publicBackdrops(event) : [],
       initialRemaining: presets.length ? remaining : 0,
+      videos: isStreamConfigured() && event.videosEnabled !== false,
     },
   };
 }
 
 // Steps: capture → review → (selfie) → working → result → posting → done
-export default function GuestCapturePage({ event, locked, closed, presets = [], backdrops = [], initialRemaining = 0 }) {
+export default function GuestCapturePage({ event, locked, closed, presets = [], backdrops = [], initialRemaining = 0, videos = false }) {
   if (locked) return <LockedEvent event={event} />;
   if (closed) return <UploadsClosed event={event} />;
-  return <CaptureFlow event={event} presets={presets} backdrops={backdrops} initialRemaining={initialRemaining} />;
+  return <CaptureFlow event={event} presets={presets} backdrops={backdrops} initialRemaining={initialRemaining} videos={videos} />;
 }
 
 function UploadsClosed({ event }) {
@@ -73,7 +76,7 @@ function UploadsClosed({ event }) {
   );
 }
 
-function CaptureFlow({ event, presets, backdrops, initialRemaining }) {
+function CaptureFlow({ event, presets, backdrops, initialRemaining, videos }) {
   const [step, setStep] = useState('capture');
   const [photo, setPhoto] = useState(null); // prepared JPEG Blob
   const [photoUrl, setPhotoUrl] = useState(null);
@@ -86,6 +89,52 @@ function CaptureFlow({ event, presets, backdrops, initialRemaining }) {
   const [pendingApproval, setPendingApproval] = useState(false);
   const [challengeId, setChallengeId] = useState(null);
   const [done, markDone] = useCompleted(event.slug);
+  const [video, setVideo] = useState(null); // { file, url, duration }
+  const [videoProgress, setVideoProgress] = useState(0);
+  const [videoError, setVideoError] = useState('');
+
+  async function handleVideo(file) {
+    setVideoError('');
+    if (file.size > MAX_VIDEO_BYTES) {
+      setVideoError(`That clip is too big. Keep it under ${MAX_VIDEO_SECONDS} seconds.`);
+      return;
+    }
+    const duration = await readVideoDuration(file);
+    if (duration && duration > MAX_VIDEO_SECONDS + 0.5) {
+      setVideoError(`Clips can be up to ${MAX_VIDEO_SECONDS} seconds; that one is ${Math.round(duration)}. Trim it in your Photos app and try again.`);
+      return;
+    }
+    setVideo({ file, url: URL.createObjectURL(file), duration });
+    setStep('videoReview');
+  }
+
+  async function postVideo() {
+    setStep('videoUploading');
+    setVideoProgress(0);
+    setVideoError('');
+    try {
+      const start = await fetch(`/api/events/${event.slug}/videos`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ challengeId, size: video.file.size }),
+      });
+      const startData = await start.json().catch(() => ({}));
+      if (!start.ok) {
+        if (startData.closed) return window.location.reload();
+        throw new Error(startData.error || "Couldn't start the upload.");
+      }
+      await uploadToStream(startData.uploadUrl, video.file, setVideoProgress);
+      const finish = await fetch(`/api/events/${event.slug}/videos/${startData.uid}`, { method: 'POST' });
+      const finishData = await finish.json().catch(() => ({}));
+      if (!finish.ok) throw new Error(finishData.error || "Couldn't finish the upload.");
+      setPendingApproval(Boolean(finishData.pending));
+      if (challengeId) markDone(challengeId);
+      setStep('done');
+    } catch (err) {
+      setVideoError(err.message || 'Check your connection and try again.');
+      setStep('videoReview');
+    }
+  }
   const [backdrop, setBackdrop] = useState(null);
 
   useEffect(() => () => photoUrl && URL.revokeObjectURL(photoUrl), [photoUrl]);
@@ -100,6 +149,9 @@ function CaptureFlow({ event, presets, backdrops, initialRemaining }) {
     setPostFailed(null);
     setBackdrop(null);
     setChallengeId(null);
+    if (video?.url) URL.revokeObjectURL(video.url);
+    setVideo(null);
+    setVideoError('');
     setStep('capture');
   }
 
@@ -191,7 +243,12 @@ function CaptureFlow({ event, presets, backdrops, initialRemaining }) {
                 Challenge: {event.challenges.find((c) => c.id === challengeId)?.text}
               </p>
             )}
-            <CameraCapture onPhoto={handlePhoto} />
+            {videoError && <p className="notice" role="alert">{videoError}</p>}
+            <CameraCapture
+              onPhoto={handlePhoto}
+              onVideo={videos ? handleVideo : undefined}
+              maxVideoSeconds={MAX_VIDEO_SECONDS}
+            />
             <ChallengeChips challenges={event.challenges} selected={challengeId} onSelect={setChallengeId} done={done} />
           </div>
         )}
@@ -237,6 +294,35 @@ function CaptureFlow({ event, presets, backdrops, initialRemaining }) {
               </section>
             )}
             {!aiAvailable && message && <p className="notice" role="status">{message}</p>}
+          </div>
+        )}
+
+        {step === 'videoReview' && video && (
+          <div>
+            <video src={video.url} controls playsInline className="preview" style={{ background: '#000' }} />
+            {videoError && <p className="notice" role="alert">{videoError}</p>}
+            <div style={{ display: 'flex', gap: 10, margin: '14px 0 20px' }}>
+              <button className="btn btn-secondary" onClick={startOver} style={{ flex: 1 }}>Retake</button>
+              <button className="btn btn-primary" onClick={postVideo} style={{ flex: 2 }}>
+                Post video{video.duration ? ` (${Math.round(video.duration)}s)` : ''}
+              </button>
+            </div>
+            {event.challenges.length > 0 && (
+              <div style={{ marginBottom: 28 }}>
+                <ChallengeChips challenges={event.challenges} selected={challengeId} onSelect={setChallengeId} done={done} compact />
+              </div>
+            )}
+            <p className="muted" style={{ fontSize: 12.5 }}>AI edits work on photos only.</p>
+          </div>
+        )}
+
+        {step === 'videoUploading' && (
+          <div style={{ textAlign: 'center', paddingTop: 48 }} role="status">
+            <p className="display" style={{ fontSize: 20, marginBottom: 8 }}>
+              {videoProgress < 1 ? 'Uploading your clip…' : 'Almost there…'}
+            </p>
+            <div className="progress"><div style={{ width: `${Math.round(videoProgress * 100)}%` }} /></div>
+            <p className="muted">Keep this page open. Clips upload at the speed of your signal.</p>
           </div>
         )}
 

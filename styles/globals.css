@@ -634,3 +634,41 @@ textarea:focus-visible {
   border-color: var(--event-primary, #1f6f63);
   color: #fff;
 }
+
+/* Video upload progress */
+.progress {
+  height: 8px;
+  border-radius: 999px;
+  background: var(--line);
+  overflow: hidden;
+  max-width: 320px;
+  margin: 8px auto 12px;
+}
+
+.progress > div {
+  height: 100%;
+  background: var(--event-primary, #1f6f63);
+  transition: width 200ms linear;
+}
+
+/* Video tiles */
+.video-badge {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  font-size: 11px;
+  font-family: system-ui, sans-serif;
+  padding: 2px 7px;
+  border-radius: 3px;
+  background: rgba(0, 0, 0, 0.6);
+  color: #fff;
+}
+
+.player-frame {
+  width: min(100%, 80vh * 9 / 16, 720px);
+  aspect-ratio: 9 / 16;
+  max-height: 76vh;
+  border: 0;
+  border-radius: 4px;
+  background: #000;
+}

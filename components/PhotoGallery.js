@@ -43,8 +43,56 @@ async function shareCopy({ slug, photo, format, setBusy }) {
   }
 }
 
+// Clips: Stream builds an MP4 in the background; hand that to the share
+// sheet, or open it if the browser won't let us fetch it.
+async function shareVideo({ photo, setBusy }) {
+  if (!photo.downloadUrl) return;
+  setBusy('video');
+  try {
+    const res = await fetch(photo.downloadUrl);
+    if (!res.ok) throw new Error('not ready');
+    const blob = await res.blob();
+    const file = new File([blob], `${photo.id}.mp4`, { type: 'video/mp4' });
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      try {
+        await navigator.share({ files: [file] });
+      } catch (err) {
+        if (err?.name !== 'AbortError') throw err;
+      }
+      return;
+    }
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = file.name;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  } catch {
+    window.open(photo.downloadUrl, '_blank');
+  } finally {
+    setBusy(null);
+  }
+}
+
 function ShareSheet({ slug, photo, onClose }) {
   const [busy, setBusy] = useState(null);
+  if (photo.kind === 'video') {
+    return (
+      <div className="sheet-backdrop" onClick={onClose}>
+        <div className="sheet" onClick={(e) => e.stopPropagation()} role="dialog" aria-label="Share this clip">
+          <p className="display" style={{ fontSize: 17, margin: '0 0 4px' }}>Share or save</p>
+          <p className="muted" style={{ margin: '0 0 14px', fontSize: 13 }}>Saves the clip as an MP4 you can post anywhere.</p>
+          <button className="sheet-option" disabled={busy !== null || !photo.downloadUrl} onClick={() => shareVideo({ photo, setBusy })}>
+            <span className="sheet-option-label">{busy ? 'Preparing…' : 'Save / share video'}</span>
+            <span className="muted" style={{ fontSize: 12.5 }}>
+              {photo.downloadUrl ? 'Full quality MP4' : 'Not available for this clip'}
+            </span>
+          </button>
+          <button className="btn btn-secondary btn-block" style={{ marginTop: 10 }} onClick={onClose}>Cancel</button>
+        </div>
+      </div>
+    );
+  }
   return (
     <div className="sheet-backdrop" onClick={onClose}>
       <div className="sheet" onClick={(e) => e.stopPropagation()} role="dialog" aria-label="Share this photo">
@@ -166,6 +214,11 @@ export default function PhotoGallery({
               decoding="async"
             />
             {p.aiLabel && <span className="ai-tag">AI · {p.aiLabel}</span>}
+            {p.kind === 'video' && (
+              <span className="video-badge">
+                {p.ready ? `▶ ${p.duration ? `${Math.round(p.duration)}s` : ''}` : 'processing'}
+              </span>
+            )}
           </button>
         ))}
       </div>
@@ -174,11 +227,27 @@ export default function PhotoGallery({
 
       {active && (
         <div className="lightbox" onClick={() => setActive(null)}>
-          <img
-            src={showOriginal && active.originalUrl ? active.originalUrl : active.mediumUrl || active.url}
-            alt=""
-            style={{ maxWidth: '100%', maxHeight: '76vh', borderRadius: 4 }}
-          />
+          {active.kind === 'video' && active.ready && active.playerUrl ? (
+            <iframe
+              src={`${active.playerUrl}?autoplay=true&preload=auto`}
+              className="player-frame"
+              allow="autoplay; fullscreen; picture-in-picture"
+              allowFullScreen
+              title="Video clip"
+              onClick={(e) => e.stopPropagation()}
+            />
+          ) : active.kind === 'video' ? (
+            <div style={{ color: '#fff', textAlign: 'center' }} onClick={(e) => e.stopPropagation()}>
+              <img src={active.url} alt="" style={{ maxWidth: '100%', maxHeight: '60vh', borderRadius: 4, opacity: 0.7 }} />
+              <p className="muted" style={{ color: 'rgba(255,255,255,0.7)' }}>Still processing — check back in a moment.</p>
+            </div>
+          ) : (
+            <img
+              src={showOriginal && active.originalUrl ? active.originalUrl : active.mediumUrl || active.url}
+              alt=""
+              style={{ maxWidth: '100%', maxHeight: '76vh', borderRadius: 4 }}
+            />
+          )}
           <div className="lightbox-meta" onClick={(e) => e.stopPropagation()}>
             {active.guestName && <span className="muted" style={{ color: 'rgba(255,255,255,0.7)' }}>{active.guestName}</span>}
           </div>

@@ -17,6 +17,7 @@ import { readGuestId } from '../../../../lib/guest';
 import { requireAccess } from '../../../../lib/access';
 import { uploadsOpen } from '../../../../lib/eventState';
 import { ensureEventFolder, uploadPhotoToDrive, isDriveConnected } from '../../../../lib/drive';
+import { refreshProcessingVideos } from '../../../../lib/videoRefresh';
 
 export const config = { api: { bodyParser: false }, maxDuration: 60 };
 
@@ -87,7 +88,10 @@ export default async function handler(req, res) {
     const before = typeof req.query.before === 'string' ? req.query.before : null;
     const since = typeof req.query.since === 'string' ? req.query.since : null;
     const challenge = typeof req.query.challenge === 'string' ? req.query.challenge : null;
-    const page = await pagePhotos(slug, { limit, before, since, challenge });
+    let page = await pagePhotos(slug, { limit, before, since, challenge });
+    if (await refreshProcessingVideos(slug, page.photos)) {
+      page = await pagePhotos(slug, { limit, before, since, challenge });
+    }
     return res.status(200).json({ photos: page.photos.map(publicPhoto), hasMore: page.hasMore });
   }
 
