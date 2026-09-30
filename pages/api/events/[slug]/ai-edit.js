@@ -62,6 +62,14 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: 'This edit needs a selfie too.' });
   }
 
+  let backdrop = null;
+  if (preset.needs.includes('backdrop')) {
+    backdrop = (event.backdrops || []).find((b) => b.id === fields.backdropId);
+    if (!backdrop) {
+      return res.status(400).json({ error: 'Pick which photo to pose with, then try again.' });
+    }
+  }
+
   const limits = aiLimitsFor(event);
   const reservation = await reserveAiEdit(slug, guestId, limits);
   if (!reservation.ok) {
@@ -80,9 +88,15 @@ export default async function handler(req, res) {
     // Images go to the AI inline and aren't stored here. A selfie in
     // particular only exists for the length of this request.
     const references = (event.referencePhotos || []).slice(0, MAX_REFERENCES);
-    let imageUrls = [toDataUri(photo)];
-    if (preset.needs.includes('references')) imageUrls = imageUrls.concat(references.map((r) => r.url));
+    // Image 1 is whatever the model should preserve. For most presets that's
+    // the guest's photo. For a backdrop preset it's the couple's portrait, so
+    // their faces survive untouched and the guest is the synthesised part.
+    const imageUrls = backdrop ? [backdrop.url] : [toDataUri(photo)];
+    if (preset.needs.includes('references')) {
+      for (const r of references) imageUrls.push(r.url);
+    }
     if (preset.needs.includes('selfie')) imageUrls.push(toDataUri(selfie));
+    if (backdrop) imageUrls.push(toDataUri(photo));
 
     const prompt = preset.buildPrompt({
       referenceCount: references.length,

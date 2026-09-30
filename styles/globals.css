@@ -388,3 +388,53 @@ textarea:focus-visible {
   color: rgba(20, 24, 28, 0.6);
   font-size: 14px;
 }
+
+/* --- Choosing a portrait to pose with --- */
+
+.backdrop-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.backdrop-choice {
+  position: relative;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--paper-dim);
+  overflow: hidden;
+  line-height: 0;
+}
+
+.backdrop-choice img {
+  width: 100%;
+  aspect-ratio: 3 / 4;
+  object-fit: cover;
+  display: block;
+}
+
+.your-photo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px;
+  margin-bottom: 16px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+.your-photo img {
+  width: 52px;
+  height: 52px;
+  object-fit: cover;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+
+.your-photo span {
+  font-size: 12.5px;
+  color: var(--ink-soft, rgba(20, 24, 28, 0.6));
+  line-height: 1.35;
+}

@@ -1,5 +1,5 @@
 import { getEvent } from '../../../../lib/store';
-import { publicPresets } from '../../../../lib/presets';
+import { publicPresets, publicBackdrops } from '../../../../lib/presets';
 
 export default async function handler(req, res) {
   if (req.method !== 'GET') return res.status(405).end();
@@ -17,6 +17,7 @@ export default async function handler(req, res) {
       primaryColor: event.primaryColor,
       accentColor: event.accentColor,
       presets: publicPresets(event),
+      backdrops: publicBackdrops(event),
     },
   });
 }

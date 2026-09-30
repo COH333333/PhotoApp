@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import Head from 'next/head';
 import Link from 'next/link';
 import { getEvent, getAiUsage } from '../../../lib/store';
-import { publicPresets } from '../../../lib/presets';
+import { publicPresets, publicBackdrops } from '../../../lib/presets';
 import { isAiConfigured } from '../../../lib/fal';
 import { getOrCreateGuestId } from '../../../lib/guest';
 import { aiLimitsFor } from '../../../lib/aiLimits';
@@ -32,13 +32,14 @@ export async function getServerSideProps({ params, req, res }) {
         accentColor: event.accentColor,
       },
       presets,
+      backdrops: presets.length ? publicBackdrops(event) : [],
       initialRemaining: presets.length ? remaining : 0,
     },
   };
 }
 
 // Steps: capture → review → (selfie) → working → result → posting → done
-export default function GuestCapturePage({ event, presets, initialRemaining }) {
+export default function GuestCapturePage({ event, presets, backdrops, initialRemaining }) {
   const [step, setStep] = useState('capture');
   const [photo, setPhoto] = useState(null); // prepared JPEG Blob
   const [photoUrl, setPhotoUrl] = useState(null);
@@ -48,6 +49,7 @@ export default function GuestCapturePage({ event, presets, initialRemaining }) {
   const [remaining, setRemaining] = useState(initialRemaining);
   const [message, setMessage] = useState('');
   const [postFailed, setPostFailed] = useState(null); // what we tried to post
+  const [backdrop, setBackdrop] = useState(null);
 
   useEffect(() => () => photoUrl && URL.revokeObjectURL(photoUrl), [photoUrl]);
 
@@ -59,6 +61,7 @@ export default function GuestCapturePage({ event, presets, initialRemaining }) {
     setShowOriginal(false);
     setMessage('');
     setPostFailed(null);
+    setBackdrop(null);
     setStep('capture');
   }
 
@@ -73,16 +76,19 @@ export default function GuestCapturePage({ event, presets, initialRemaining }) {
   function choosePreset(p) {
     setPreset(p);
     setMessage('');
-    if (p.needsSelfie) setStep('selfie');
+    setBackdrop(null);
+    if (p.needsBackdrop) setStep('backdrop');
+    else if (p.needsSelfie) setStep('selfie');
     else runEdit(p, null);
   }
 
-  async function runEdit(p, selfie) {
+  async function runEdit(p, selfie, chosenBackdrop) {
     setStep('working');
     const form = new FormData();
     form.append('preset', p.id);
     form.append('photo', photo, 'photo.jpg');
     if (selfie) form.append('selfie', selfie, 'selfie.jpg');
+    if (chosenBackdrop) form.append('backdropId', chosenBackdrop.id);
     try {
       const res = await fetch(`/api/events/${event.slug}/ai-edit`, { method: 'POST', body: form });
       const data = await res.json().catch(() => ({}));
@@ -183,6 +189,45 @@ export default function GuestCapturePage({ event, presets, initialRemaining }) {
           </div>
         )}
 
+        {step === 'backdrop' && (
+          <div>
+            <p className="display" style={{ fontSize: 19, textAlign: 'center', margin: '0 0 6px' }}>
+              Which photo do you want to be in?
+            </p>
+            <p className="muted" style={{ textAlign: 'center', marginTop: 0, marginBottom: 14 }}>
+              You'll be added standing beside us, using the photo you just took.
+            </p>
+            <div className="your-photo">
+              <img src={photoUrl} alt="The photo you just took" />
+              <span>
+                This is who gets added. If it isn't a photo of you, go back and take one.
+              </span>
+            </div>
+            {backdrops.length === 0 && (
+              <p className="notice" role="status">
+                Those photos aren't available right now. You can still post your own.
+              </p>
+            )}
+            <div className="backdrop-grid">
+              {backdrops.map((b) => (
+                <button
+                  key={b.id}
+                  className="backdrop-choice"
+                  onClick={() => {
+                    setBackdrop(b);
+                    runEdit(preset, null, b);
+                  }}
+                >
+                  <img src={b.url} alt="Wedding portrait" loading="lazy" />
+                </button>
+              ))}
+            </div>
+            <div style={{ textAlign: 'center', marginTop: 18 }}>
+              <button className="btn btn-secondary" onClick={() => setStep('review')}>Back</button>
+            </div>
+          </div>
+        )}
+
         {step === 'selfie' && (
           <div style={{ paddingTop: 8 }}>
             <p className="display" style={{ fontSize: 19, textAlign: 'center', margin: '0 0 6px' }}>Now a quick selfie</p>
@@ -204,7 +249,7 @@ export default function GuestCapturePage({ event, presets, initialRemaining }) {
         {step === 'working' && (
           <div>
             <div className="working-frame">
-              <img src={photoUrl} alt="" className="preview" />
+              <img src={preset?.needsBackdrop && backdrop ? backdrop.url : photoUrl} alt="" className="preview" />
               <div className="working-overlay">
                 <span className="spinner" aria-hidden="true" />
                 <span>{preset?.label}…</span>
@@ -224,18 +269,20 @@ export default function GuestCapturePage({ event, presets, initialRemaining }) {
               className="preview"
             />
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', margin: '10px 0 16px' }}>
-              <span className="muted" style={{ fontSize: 13 }}>{showOriginal ? 'Original' : edit.label}</span>
+              <span className="muted" style={{ fontSize: 13 }}>
+                {showOriginal ? (preset?.needsBackdrop ? 'Your photo' : 'Original') : edit.label}
+              </span>
               <button className="btn btn-secondary" style={{ padding: '8px 14px', fontSize: 13 }} onClick={() => setShowOriginal((v) => !v)}>
-                {showOriginal ? 'Show edit' : 'Compare with original'}
+                {showOriginal ? 'Show edit' : preset?.needsBackdrop ? 'Show your photo' : 'Compare with original'}
               </button>
             </div>
             <button className="btn btn-primary btn-block" onClick={() => post(true)}>Post this edit</button>
             <div style={{ display: 'flex', gap: 10, marginTop: 10 }}>
-              <button className="btn btn-secondary" style={{ flex: 1 }} onClick={() => { setEdit(null); setStep('review'); }}>
+              <button className="btn btn-secondary" style={{ flex: 1 }} onClick={() => { setEdit(null); setBackdrop(null); setStep('review'); }}>
                 Try another edit
               </button>
               <button className="btn btn-secondary" style={{ flex: 1 }} onClick={() => post(false)}>
-                Post original
+                {preset?.needsBackdrop ? 'Post my photo' : 'Post original'}
               </button>
             </div>
           </div>

@@ -40,6 +40,7 @@ export default async function handler(req, res) {
       primaryColor: primaryColor || '#1f6f63',
       accentColor: accentColor || '#e2a73b',
       referencePhotos: [],
+      backdrops: [],
       aiPresets: DEFAULT_ENABLED,
       aiPerGuest: AI_DEFAULTS.perGuest,
       aiPerEvent: AI_DEFAULTS.perEvent,

@@ -3,7 +3,14 @@ import Head from 'next/head';
 import Link from 'next/link';
 import { isAdminRequest } from '../../../lib/auth';
 import { getEvent, listPhotos, getAiUsage } from '../../../lib/store';
-import { PRESETS, DEFAULT_ENABLED, keepsakeTextFor, maxCostFor, DEFAULT_COST } from '../../../lib/presets';
+import {
+  PRESETS,
+  DEFAULT_ENABLED,
+  keepsakeTextFor,
+  maxCostFor,
+  DEFAULT_COST,
+  MAX_BACKDROPS,
+} from '../../../lib/presets';
 import { isAiConfigured } from '../../../lib/fal';
 import { aiLimitsFor } from '../../../lib/aiLimits';
 import { preparePhoto } from '../../../lib/heicConvert';
@@ -27,6 +34,7 @@ export async function getServerSideProps({ req, params }) {
     label: p.label,
     blurb: p.blurb,
     needsReferences: p.needs.includes('references'),
+    needsBackdrops: p.needs.includes('backdrop'),
   }));
 
   return {
@@ -56,6 +64,8 @@ export default function AdminEventDetail({
   costPerEdit,
 }) {
   const [references, setReferences] = useState(event.referencePhotos || []);
+  const [backdrops, setBackdrops] = useState(event.backdrops || []);
+  const [uploadingBackdrop, setUploadingBackdrop] = useState(false);
   const [uploading, setUploading] = useState(false);
 
   const [enabled, setEnabled] = useState(event.aiPresets || DEFAULT_ENABLED);
@@ -84,6 +94,37 @@ export default function AdminEventDetail({
       }
     } finally {
       setUploading(false);
+    }
+  }
+
+  async function handleBackdropUpload(e) {
+    const picked = Array.from(e.target.files || []);
+    e.target.value = '';
+    if (!picked.length) return;
+    setUploadingBackdrop(true);
+    try {
+      for (const file of picked) {
+        const prepared = await preparePhoto(file);
+        const form = new FormData();
+        form.append('photo', prepared, 'backdrop.jpg');
+        const res = await fetch(`/api/admin/events/${event.slug}/backdrops`, { method: 'POST', body: form });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          alert(data.error || 'Could not upload that photo.');
+          break;
+        }
+        setBackdrops(data.event.backdrops);
+      }
+    } finally {
+      setUploadingBackdrop(false);
+    }
+  }
+
+  async function handleDeleteBackdrop(id) {
+    const res = await fetch(`/api/admin/events/${event.slug}/backdrops?id=${id}`, { method: 'DELETE' });
+    if (res.ok) {
+      const data = await res.json();
+      setBackdrops(data.event.backdrops);
     }
   }
 
@@ -164,6 +205,42 @@ export default function AdminEventDetail({
                 </label>
               )}
             </div>
+
+            <div className="card">
+              <h2 className="display" style={{ fontSize: 16, marginTop: 0 }}>Portraits to pose with</h2>
+              <p className="muted" style={{ marginTop: 0 }}>
+                Used by "Pose with us." Guests pick one of these and get added standing beside you.
+                Your photo stays exactly as it is, so choose ones you love. Leave some space around
+                you in the frame — that's where the guest goes.
+              </p>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
+                {backdrops.map((b) => (
+                  <div key={b.id} style={{ position: 'relative' }}>
+                    <img
+                      src={b.url}
+                      alt="Portrait"
+                      style={{ height: 96, width: 72, objectFit: 'cover', borderRadius: 3 }}
+                    />
+                    <button onClick={() => handleDeleteBackdrop(b.id)} aria-label="Remove portrait" className="remove-dot">
+                      ×
+                    </button>
+                  </div>
+                ))}
+              </div>
+              {backdrops.length < MAX_BACKDROPS && (
+                <label className="btn btn-secondary btn-block" style={{ cursor: 'pointer' }}>
+                  {uploadingBackdrop ? 'Uploading…' : 'Add portraits'}
+                  <input
+                    type="file"
+                    accept="image/*,.heic,.heif"
+                    multiple
+                    onChange={handleBackdropUpload}
+                    style={{ display: 'none' }}
+                    disabled={uploadingBackdrop}
+                  />
+                </label>
+              )}
+            </div>
           </div>
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
@@ -188,6 +265,11 @@ export default function AdminEventDetail({
                       {p.needsReferences && references.length === 0 && enabled.includes(p.id) && (
                         <span className="muted" style={{ display: 'block', fontSize: 12.5 }}>
                           Hidden from guests until you add reference photos.
+                        </span>
+                      )}
+                      {p.needsBackdrops && backdrops.length === 0 && enabled.includes(p.id) && (
+                        <span className="muted" style={{ display: 'block', fontSize: 12.5 }}>
+                          Hidden from guests until you add portraits to pose with.
                         </span>
                       )}
                     </span>
