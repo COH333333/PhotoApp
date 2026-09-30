@@ -105,7 +105,6 @@ export default async function handler(req, res) {
     const prompt = preset.buildPrompt({
       referenceCount: references.length,
       keepsakeText: keepsakeTextFor(event),
-      placement: fields.placement,
     });
 
     result = await runEdit({ prompt, imageUrls, model: preset.model });
