@@ -50,8 +50,10 @@ export default async function handler(req, res) {
   } catch (err) {
     console.error('Stream direct upload failed:', err.status, err.message);
     await releaseVideo(slug, guestId).catch(() => {});
-    // Cloudflare's own message is short and non-sensitive ("Stream is not
-    // enabled", "Authentication error"); showing it saves a round trip.
+    // A quota or billing problem is the host's to fix, not the guest's.
+    if (/storage|quota|capacity|not enabled|subscription/i.test(err.message)) {
+      return res.status(503).json({ error: "Videos aren't available right now. You can still post photos." });
+    }
     return res.status(502).json({ error: `Couldn't start the video upload (${err.message}). Try again.` });
   }
 }
