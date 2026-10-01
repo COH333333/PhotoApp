@@ -197,6 +197,48 @@ export default function PhotoGallery({
     setActive(p);
   }
 
+  // Swipe (or arrow keys) through neighbours in the enlarged view. Near the
+  // end of what's loaded, fetch the next page so the swipe never dead-ends.
+  const activeIndex = active ? shown.findIndex((p) => p.id === active.id) : -1;
+  const step = useCallback(
+    (dir) => {
+      if (activeIndex < 0) return;
+      const next = shown[activeIndex + dir];
+      if (next) open(next);
+      if (dir > 0 && activeIndex + dir >= shown.length - 5) loadMore();
+    },
+    [activeIndex, shown, loadMore]
+  );
+
+  useEffect(() => {
+    if (!active) return undefined;
+    function onKey(e) {
+      if (e.key === 'ArrowRight') step(1);
+      else if (e.key === 'ArrowLeft') step(-1);
+      else if (e.key === 'Escape') setActive(null);
+    }
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [active, step]);
+
+  const touch = useRef(null);
+  function onTouchStart(e) {
+    const t = e.touches[0];
+    touch.current = { x: t.clientX, y: t.clientY, at: Date.now() };
+  }
+  function onTouchEnd(e) {
+    const start = touch.current;
+    touch.current = null;
+    if (!start) return;
+    const t = e.changedTouches[0];
+    const dx = t.clientX - start.x;
+    const dy = t.clientY - start.y;
+    // A real sideways swipe: mostly horizontal, far enough, quick enough.
+    if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy) * 1.5 && Date.now() - start.at < 800) {
+      step(dx < 0 ? 1 : -1);
+    }
+  }
+
   return (
     <>
       {shown.length === 0 && !hasMore && (
@@ -226,7 +268,18 @@ export default function PhotoGallery({
       {loadingMore && <p className="muted" style={{ textAlign: 'center' }}>Loading more…</p>}
 
       {active && (
-        <div className="lightbox" onClick={() => setActive(null)}>
+        <div className="lightbox" onClick={() => setActive(null)} onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
+          {activeIndex > 0 && (
+            <button className="lightbox-arrow is-left" aria-label="Previous photo" onClick={(e) => { e.stopPropagation(); step(-1); }}>
+              ‹
+            </button>
+          )}
+          {(activeIndex < shown.length - 1 || hasMore) && (
+            <button className="lightbox-arrow is-right" aria-label="Next photo" onClick={(e) => { e.stopPropagation(); step(1); }}>
+              ›
+            </button>
+          )}
+          <span className="lightbox-count">{activeIndex + 1} / {shown.length}{hasMore ? '+' : ''}</span>
           {active.kind === 'video' && active.ready && active.playerUrl ? (
             <iframe
               src={`${active.playerUrl}?autoplay=true&preload=auto`}
@@ -243,9 +296,10 @@ export default function PhotoGallery({
             </div>
           ) : (
             <img
+              key={active.id}
               src={showOriginal && active.originalUrl ? active.originalUrl : active.mediumUrl || active.url}
               alt=""
-              style={{ maxWidth: '100%', maxHeight: '76vh', borderRadius: 4 }}
+              className="lightbox-img"
             />
           )}
           <div className="lightbox-meta" onClick={(e) => e.stopPropagation()}>

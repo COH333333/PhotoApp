@@ -672,3 +672,51 @@ textarea:focus-visible {
   border-radius: 4px;
   background: #000;
 }
+
+/* Lightbox navigation */
+.lightbox-img {
+  max-width: 100%;
+  max-height: 76vh;
+  border-radius: 4px;
+  animation: lightbox-in 180ms ease-out;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
+@keyframes lightbox-in {
+  from { opacity: 0.4; transform: scale(0.985); }
+  to { opacity: 1; transform: none; }
+}
+
+.lightbox-arrow {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 44px;
+  height: 64px;
+  border: 0;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+  font-size: 34px;
+  line-height: 1;
+  cursor: pointer;
+  z-index: 1;
+}
+
+.lightbox-arrow.is-left { left: 8px; }
+.lightbox-arrow.is-right { right: 8px; }
+
+.lightbox-count {
+  position: absolute;
+  top: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+@media (hover: none) {
+  /* Phones swipe; keep the arrows out of the way. */
+  .lightbox-arrow { display: none; }
+}
