@@ -109,6 +109,48 @@ export default function AdminEventDetail({
   const [coverUrl, setCoverUrl] = useState(event.coverUrl || null);
   const [uploadingCover, setUploadingCover] = useState(false);
   const [settingsState, setSettingsState] = useState('');
+  const [previews, setPreviews] = useState(event.stylePreviews || {});
+  const [previewBusy, setPreviewBusy] = useState(null); // preset id being made
+  const [previewLog, setPreviewLog] = useState('');
+
+  async function makePreview(id) {
+    setPreviewBusy(id);
+    try {
+      const res = await fetch(`/api/admin/events/${event.slug}/previews`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ presetId: id }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setPreviewLog(data.error || 'Could not make that preview.');
+        return false;
+      }
+      setPreviews(data.stylePreviews);
+      return true;
+    } catch {
+      setPreviewLog('Connection dropped. Try again.');
+      return false;
+    } finally {
+      setPreviewBusy(null);
+    }
+  }
+
+  async function makeMissingPreviews() {
+    setPreviewLog('');
+    const todo = allPresets.filter((p) => p.previewable && enabled.includes(p.id) && !previews[p.id]);
+    for (const p of todo) {
+      setPreviewLog(`Making ${p.label}…`);
+      if (!(await makePreview(p.id))) return;
+    }
+    setPreviewLog(todo.length ? 'Done.' : 'All enabled styles already have previews.');
+  }
+
+  async function removePreview(id) {
+    const res = await fetch(`/api/admin/events/${event.slug}/previews?id=${id}`, { method: 'DELETE' });
+    if (res.ok) setPreviews((await res.json()).stylePreviews);
+  }
+
   const [streamStatus, setStreamStatus] = useState(null);
   useEffect(() => {
     if (!videoConfigured) return;
@@ -605,6 +647,48 @@ export default function AdminEventDetail({
                 {saveState && <span className="muted" role="status">{saveState}</span>}
               </div>
             </form>
+
+            <div className="card">
+              <h2 className="display" style={{ fontSize: 16, marginTop: 0 }}>Style previews</h2>
+              <p className="muted" style={{ marginTop: 0 }}>
+                A sample of each style on one of your portraits, shown to guests before they pick. Made once
+                per style ({`$${defaultCost.toFixed(2)}`} each) from your first portrait to pose with. Save the AI
+                settings first so the list below matches what guests see.
+              </p>
+              {backdrops.length === 0 && references.length === 0 && (
+                <p className="notice-dark">Add a portrait to pose with first; that's the photo the samples are made from.</p>
+              )}
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
+                {allPresets.filter((p) => p.previewable && enabled.includes(p.id)).map((p) => (
+                  <div key={p.id} style={{ width: 96, textAlign: 'center' }}>
+                    <div style={{ position: 'relative' }}>
+                      {previews[p.id] ? (
+                        <img src={previews[p.id]} alt={p.label} style={{ width: 96, height: 96, objectFit: 'cover', borderRadius: 3 }} />
+                      ) : (
+                        <button
+                          className="btn btn-secondary"
+                          style={{ width: 96, height: 96, padding: 0, fontSize: 12 }}
+                          disabled={previewBusy !== null}
+                          onClick={() => { setPreviewLog(''); makePreview(p.id); }}
+                        >
+                          {previewBusy === p.id ? 'Making…' : 'Make'}
+                        </button>
+                      )}
+                      {previews[p.id] && (
+                        <button onClick={() => removePreview(p.id)} aria-label="Remove preview" className="remove-dot">×</button>
+                      )}
+                    </div>
+                    <span className="muted" style={{ fontSize: 11.5, display: 'block', marginTop: 4 }}>{p.label}</span>
+                  </div>
+                ))}
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+                <button type="button" className="btn btn-primary" disabled={previewBusy !== null || !aiConfigured} onClick={makeMissingPreviews}>
+                  Make previews for enabled styles
+                </button>
+                {previewLog && <span className="muted" role="status">{previewLog}</span>}
+              </div>
+            </div>
 
             <div>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, flexWrap: 'wrap', gap: 8 }}>

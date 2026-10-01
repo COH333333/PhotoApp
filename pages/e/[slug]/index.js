@@ -169,6 +169,7 @@ function CaptureFlow({ event, presets, backdrops, initialRemaining, videos }) {
     setBackdrop(null);
     if (p.needsBackdrop) setStep('backdrop');
     else if (p.needsSelfie) setStep('selfie');
+    else if (p.previewUrl) setStep('preview');
     else runEdit(p, null);
   }
 
@@ -279,12 +280,15 @@ function CaptureFlow({ event, presets, backdrops, initialRemaining, videos }) {
                   {presets.map((p) => (
                     <button
                       key={p.id}
-                      className="preset-chip"
+                      className={`preset-chip${p.previewUrl ? ' has-preview' : ''}`}
                       onClick={() => choosePreset(p)}
                       disabled={remaining <= 0}
                     >
-                      <span className="preset-label">{p.label}</span>
-                      <span className="preset-blurb">{p.blurb}</span>
+                      {p.previewUrl && <img src={p.previewUrl} alt="" className="preset-thumb" loading="lazy" />}
+                      <span className="preset-text">
+                        <span className="preset-label">{p.label}</span>
+                        <span className="preset-blurb">{p.blurb}</span>
+                      </span>
                     </button>
                   ))}
                 </div>
@@ -323,6 +327,23 @@ function CaptureFlow({ event, presets, backdrops, initialRemaining, videos }) {
             </p>
             <div className="progress"><div style={{ width: `${Math.round(videoProgress * 100)}%` }} /></div>
             <p className="muted">Keep this page open. Clips upload at the speed of your signal.</p>
+          </div>
+        )}
+
+        {step === 'preview' && preset && (
+          <div>
+            <p className="display" style={{ fontSize: 19, textAlign: 'center', margin: '0 0 4px' }}>{preset.label}</p>
+            <p className="muted" style={{ textAlign: 'center', marginTop: 0, marginBottom: 14 }}>{preset.blurb}</p>
+            <img src={preset.previewUrl} alt={`${preset.label} example`} className="preview" />
+            <p className="muted" style={{ fontSize: 12.5, textAlign: 'center', margin: '8px 0 16px' }}>
+              An example of this style on one of {event.subject === 'us' ? 'our' : `${event.subject}'s`} photos. Yours will keep your own faces and setting.
+            </p>
+            <button className="btn btn-primary btn-block" onClick={() => runEdit(preset, null)}>
+              Use this style on my photo
+            </button>
+            <div style={{ textAlign: 'center', marginTop: 10 }}>
+              <button className="btn btn-secondary" onClick={() => { setPreset(null); setStep('review'); }}>Pick a different style</button>
+            </div>
           </div>
         )}
 
