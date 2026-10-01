@@ -1,6 +1,6 @@
 import { nanoid } from 'nanoid';
 import { put } from '@vercel/blob';
-import { getEvent, reserveAiEdit, releaseAiEdit, saveEdit, getAiUsage } from '../../../../lib/store';
+import { getEvent, reserveAiEdit, releaseAiEdit, saveEdit, getAiUsage, getHiddenPresets } from '../../../../lib/store';
 import { parseMultipart } from '../../../../lib/parseForm';
 import { readGuestId } from '../../../../lib/guest';
 import { requireAccess } from '../../../../lib/access';
@@ -78,7 +78,7 @@ export default async function handler(req, res) {
   }
 
   const presetId = fields.preset;
-  const allowed = publicPresets(event).map((p) => p.id);
+  const allowed = publicPresets(event, {}, await getHiddenPresets()).map((p) => p.id);
   if (!presetId || !allowed.includes(presetId)) {
     return res.status(400).json({ error: 'That edit is not available for this event.' });
   }

@@ -2,7 +2,7 @@ import { useState } from 'react';
 import Head from 'next/head';
 import Link from 'next/link';
 import { isAdminRequest } from '../../lib/auth';
-import { getGlobalSamples } from '../../lib/store';
+import { getGlobalSamples, getHiddenPresets } from '../../lib/store';
 import { presetSummaries, DEFAULT_COST } from '../../lib/presets';
 import { isAiConfigured } from '../../lib/fal';
 import { preparePhoto } from '../../lib/heicConvert';
@@ -12,12 +12,26 @@ import { preparePhoto } from '../../lib/heicConvert';
 export async function getServerSideProps({ req }) {
   if (!isAdminRequest(req)) return { redirect: { destination: '/admin/login', permanent: false } };
   const samples = await getGlobalSamples();
-  const styles = presetSummaries({}).filter((p) => p.previewable);
-  return { props: { samples, styles, aiConfigured: isAiConfigured(), cost: DEFAULT_COST } };
+  const all = presetSummaries({}).map((p) => ({ id: p.id, label: p.label, blurb: p.blurb, previewable: p.previewable }));
+  return {
+    props: { samples, all, initialHidden: await getHiddenPresets(), aiConfigured: isAiConfigured(), cost: DEFAULT_COST },
+  };
 }
 
-export default function SamplesPage({ samples: initial, styles, aiConfigured, cost }) {
+export default function SamplesPage({ samples: initial, all, initialHidden, aiConfigured, cost }) {
   const [samples, setSamples] = useState(initial);
+  const [hidden, setHidden] = useState(initialHidden);
+  const styles = all.filter((p) => p.previewable && !hidden.includes(p.id));
+  const removed = all.filter((p) => hidden.includes(p.id));
+
+  async function setStyleHidden(id, value) {
+    const res = await fetch('/api/admin/styles', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id, hidden: value }),
+    });
+    if (res.ok) setHidden((await res.json()).hidden);
+  }
   const [busy, setBusy] = useState(null);
   const [log, setLog] = useState('');
 
@@ -79,22 +93,23 @@ export default function SamplesPage({ samples: initial, styles, aiConfigured, co
     if (res.ok) setSamples(await res.json());
   }
 
-  const made = Object.keys(samples.previews || {}).length;
+  const made = styles.filter((p) => samples.previews?.[p.id]).length;
   const missing = styles.length - made;
 
   return (
     <div className="admin-shell page">
       <Head>
-        <title>Style samples - Moment Share</title>
+        <title>Style library - Moment Share</title>
       </Head>
       <div className="wide-container" style={{ paddingTop: 48, paddingBottom: 80 }}>
         <Link href="/admin" className="muted" style={{ textDecoration: 'none' }}>&larr; All events</Link>
-        <h1 className="display" style={{ fontSize: 28, marginTop: 8, marginBottom: 8 }}>Style samples</h1>
+        <h1 className="display" style={{ fontSize: 28, marginTop: 8, marginBottom: 8 }}>Style library</h1>
         <p className="muted" style={{ maxWidth: 640 }}>
           One photo, rendered once in every style. Guests at every event see these when choosing a
           style, so nobody spends an edit just to look. {`$${cost.toFixed(2)}`} per style, once.
           Pick a photo with two or three people, faces clear, some background — the styles show
-          best on a scene, not a close-up.
+          best on a scene, not a close-up. <strong>Remove</strong> takes a style out of the whole app
+          (every event); it can be restored from the bottom of this page.
         </p>
 
         <div className="admin-grid" style={{ marginTop: 24 }}>
@@ -138,11 +153,20 @@ export default function SamplesPage({ samples: initial, styles, aiConfigured, co
                     </button>
                   )}
                   <span className="muted" style={{ fontSize: 12, display: 'block', marginTop: 4 }}>{p.label}</span>
-                  {samples.previews?.[p.id] && (
-                    <button className="muted" style={{ background: 'none', border: 0, fontSize: 11.5, cursor: 'pointer', textDecoration: 'underline' }} disabled={busy !== null} onClick={() => make(p.id)}>
-                      remake
+                  <div style={{ display: 'flex', justifyContent: 'center', gap: 8 }}>
+                    {samples.previews?.[p.id] && (
+                      <button className="muted" style={{ background: 'none', border: 0, fontSize: 11.5, cursor: 'pointer', textDecoration: 'underline' }} disabled={busy !== null} onClick={() => make(p.id)}>
+                        remake
+                      </button>
+                    )}
+                    <button
+                      style={{ background: 'none', border: 0, fontSize: 11.5, cursor: 'pointer', textDecoration: 'underline', color: '#e2a73b' }}
+                      disabled={busy !== null}
+                      onClick={() => setStyleHidden(p.id, true)}
+                    >
+                      remove
                     </button>
-                  )}
+                  </div>
                 </div>
               ))}
             </div>
@@ -152,6 +176,27 @@ export default function SamplesPage({ samples: initial, styles, aiConfigured, co
               </button>
               {log && <span className="muted" role="status">{log}</span>}
             </div>
+
+            <h3 className="display" style={{ fontSize: 14, margin: '28px 0 8px' }}>Other edits</h3>
+            <p className="muted" style={{ fontSize: 12.5, marginTop: 0 }}>These use the guest's own input, so they have no sample.</p>
+            {all.filter((p) => !p.previewable && !hidden.includes(p.id)).map((p) => (
+              <div key={p.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0' }}>
+                <span><strong>{p.label}</strong> <span className="muted">{p.blurb}</span></span>
+                <button className="btn btn-secondary" style={{ padding: '4px 10px', fontSize: 12 }} onClick={() => setStyleHidden(p.id, true)}>Remove</button>
+              </div>
+            ))}
+
+            {removed.length > 0 && (
+              <>
+                <h3 className="display" style={{ fontSize: 14, margin: '28px 0 8px' }}>Removed ({removed.length})</h3>
+                {removed.map((p) => (
+                  <div key={p.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0' }}>
+                    <span className="muted">{p.label}</span>
+                    <button className="btn btn-secondary" style={{ padding: '4px 10px', fontSize: 12 }} onClick={() => setStyleHidden(p.id, false)}>Restore</button>
+                  </div>
+                ))}
+              </>
+            )}
           </div>
         </div>
       </div>

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import Head from 'next/head';
 import Link from 'next/link';
 import { isAdminRequest } from '../../../lib/auth';
-import { getEvent, listAllPhotos, getAiUsage } from '../../../lib/store';
+import { getEvent, listAllPhotos, getAiUsage, getHiddenPresets } from '../../../lib/store';
 // Deliberately NOT importing PRESETS or maxCostFor here: referencing them in
 // the rendered component pulls lib/presets into the client bundle, prompts and
 // all, and that bundle is fetchable by any guest. Everything this page needs
@@ -39,7 +39,7 @@ export async function getServerSideProps({ req, params }) {
   const albumUrl = albumLink(origin, event);
   const wallUrl = wallLink(origin, event);
 
-  const allPresets = presetSummaries(event);
+  const allPresets = presetSummaries(event, await getHiddenPresets());
 
   return {
     props: {

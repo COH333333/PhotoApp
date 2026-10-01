@@ -1,4 +1,4 @@
-import { getEvent, getGlobalSamples } from '../../../../lib/store';
+import { getEvent, getGlobalSamples, getHiddenPresets } from '../../../../lib/store';
 import { publicPresets, publicBackdrops } from '../../../../lib/presets';
 import { requireAccess } from '../../../../lib/access';
 import { uploadsState } from '../../../../lib/eventState';
@@ -16,7 +16,7 @@ export default async function handler(req, res) {
   res.status(200).json({
     event: {
       ...publicEvent(event),
-      presets: publicPresets(event, (await getGlobalSamples()).previews),
+      presets: publicPresets(event, (await getGlobalSamples()).previews, await getHiddenPresets()),
       backdrops: publicBackdrops(event),
       uploads: uploadsState(event),
     },
