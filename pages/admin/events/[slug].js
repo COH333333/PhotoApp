@@ -20,6 +20,7 @@ import { aiLimitsFor, videoLimitsFor } from '../../../lib/aiLimits';
 import { isStreamConfigured, MAX_VIDEO_SECONDS } from '../../../lib/stream';
 import { preparePhoto } from '../../../lib/heicConvert';
 import QRCodeCard from '../../../components/QRCodeCard';
+import ColorField from '../../../components/ColorField';
 import { guestLink, albumLink, wallLink } from '../../../lib/access';
 import { uploadsState } from '../../../lib/eventState';
 
@@ -402,16 +403,30 @@ export default function AdminEventDetail({
                 />
                 <span className="muted" style={{ fontSize: 12.5 }}>Printed on the Post and Story share sizes.</span>
               </div>
-              <div style={{ display: 'flex', gap: 12 }}>
-                <div className="field" style={{ flex: 1 }}>
-                  <label htmlFor="ev-primary">Main colour</label>
-                  <input id="ev-primary" type="color" value={primaryColor} onChange={(e) => { setPrimaryColor(e.target.value); setSettingsState(''); }} />
-                </div>
-                <div className="field" style={{ flex: 1 }}>
-                  <label htmlFor="ev-accent">Accent colour</label>
-                  <input id="ev-accent" type="color" value={accentColor} onChange={(e) => { setAccentColor(e.target.value); setSettingsState(''); }} />
+              <ColorField
+                id="ev-primary"
+                label="Main colour"
+                value={primaryColor}
+                onChange={(c) => { setPrimaryColor(c); setSettingsState(''); }}
+              />
+              <ColorField
+                id="ev-accent"
+                label="Accent colour"
+                value={accentColor}
+                onChange={(c) => { setAccentColor(c); setSettingsState(''); }}
+              />
+              <div className="color-preview" style={{ '--event-primary': primaryColor, '--event-accent': accentColor }} aria-hidden="true">
+                <div className="color-preview-bar" style={{ background: primaryColor }} />
+                <div className="color-preview-body">
+                  <span className="display" style={{ fontSize: 16 }}>{name || 'Your event'}</span>
+                  <span className="btn btn-primary" style={{ padding: '8px 14px', fontSize: 13 }}>Post photo</span>
+                  <span className="preset-chip" style={{ padding: '8px 10px' }}>
+                    <span className="preset-label" style={{ fontSize: 13 }}>An AI edit</span>
+                    <span className="preset-blurb">Accent colour on the left edge</span>
+                  </span>
                 </div>
               </div>
+              <p className="muted" style={{ fontSize: 12.5, marginTop: -8 }}>Preview of the guest pages. Press Save below to apply.</p>
               <div className="field">
                 <label>Cover photo</label>
                 {coverUrl && (
