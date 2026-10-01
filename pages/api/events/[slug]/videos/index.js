@@ -48,8 +48,10 @@ export default async function handler(req, res) {
     });
     return res.status(200).json({ uploadUrl, uid, maxSeconds: MAX_VIDEO_SECONDS });
   } catch (err) {
-    console.error('Stream direct upload failed:', err.message);
+    console.error('Stream direct upload failed:', err.status, err.message);
     await releaseVideo(slug, guestId).catch(() => {});
-    return res.status(502).json({ error: "Couldn't start the video upload. Try again." });
+    // Cloudflare's own message is short and non-sensitive ("Stream is not
+    // enabled", "Authentication error"); showing it saves a round trip.
+    return res.status(502).json({ error: `Couldn't start the video upload (${err.message}). Try again.` });
   }
 }

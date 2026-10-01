@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import Head from 'next/head';
 import Link from 'next/link';
 import { isAdminRequest } from '../../../lib/auth';
@@ -109,6 +109,14 @@ export default function AdminEventDetail({
   const [coverUrl, setCoverUrl] = useState(event.coverUrl || null);
   const [uploadingCover, setUploadingCover] = useState(false);
   const [settingsState, setSettingsState] = useState('');
+  const [streamStatus, setStreamStatus] = useState(null);
+  useEffect(() => {
+    if (!videoConfigured) return;
+    fetch('/api/admin/stream-status')
+      .then((r) => r.json())
+      .then(setStreamStatus)
+      .catch(() => setStreamStatus({ ok: false, error: 'Could not reach the status check' }));
+  }, [videoConfigured]);
   const [challengeText, setChallengeText] = useState((event.challenges || []).map((c) => c.text).join('\n'));
 
   // One challenge per line. Lines that match an existing challenge keep its
@@ -414,6 +422,16 @@ export default function AdminEventDetail({
                     Up to {maxVideoSeconds} seconds each, {videoLimits.perGuest} per guest.
                     {videoConfigured ? '' : ' Not active yet: add CF_ACCOUNT_ID and CF_STREAM_TOKEN in Vercel.'}
                   </span>
+                  {streamStatus && streamStatus.ok && (
+                    <span className="muted" style={{ display: 'block', fontSize: 12.5 }}>
+                      Cloudflare Stream connected{typeof streamStatus.videoCount === 'number' ? ` · ${streamStatus.videoCount} clips stored` : ''}.
+                    </span>
+                  )}
+                  {streamStatus && streamStatus.ok === false && (
+                    <span style={{ display: 'block', fontSize: 12.5, color: '#e2a73b' }}>
+                      Cloudflare Stream isn't responding: {streamStatus.error}{streamStatus.status ? ` (HTTP ${streamStatus.status})` : ''}.
+                    </span>
+                  )}
                 </span>
               </label>
               <label className="check-row">
