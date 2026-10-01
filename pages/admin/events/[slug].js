@@ -651,9 +651,10 @@ export default function AdminEventDetail({
             <div className="card">
               <h2 className="display" style={{ fontSize: 16, marginTop: 0 }}>Style previews</h2>
               <p className="muted" style={{ marginTop: 0 }}>
-                A sample of each style on one of your portraits, shown to guests before they pick. Made once
-                per style ({`$${defaultCost.toFixed(2)}`} each) from your first portrait to pose with. Save the AI
-                settings first so the list below matches what guests see.
+                Optional. Guests already see the app-wide <Link href="/admin/samples" style={{ color: 'inherit' }}>style samples</Link>;
+                make these only if you want the samples to show {subject} instead. One edit per style
+                ({`$${defaultCost.toFixed(2)}`}), made from your first portrait to pose with. Save the AI settings
+                first so the list matches what guests see.
               </p>
               {backdrops.length === 0 && references.length === 0 && (
                 <p className="notice-dark">Add a portrait to pose with first; that's the photo the samples are made from.</p>

@@ -66,6 +66,8 @@ export default function AdminDashboard({ events, driveConnected, templates }) {
               Your events
             </h1>
           </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+          <Link href="/admin/samples" className="btn btn-secondary">Style samples</Link>
           <form action="/api/admin/logout" method="POST">
             <button
               className="btn btn-secondary"
@@ -79,6 +81,7 @@ export default function AdminDashboard({ events, driveConnected, templates }) {
               Sign out
             </button>
           </form>
+          </div>
         </div>
 
         {!driveConnected && (
