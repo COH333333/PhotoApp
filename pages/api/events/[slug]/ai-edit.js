@@ -1,6 +1,6 @@
 import { nanoid } from 'nanoid';
 import { put } from '@vercel/blob';
-import { getEvent, reserveAiEdit, releaseAiEdit, saveEdit, getAiUsage, getHiddenPresets } from '../../../../lib/store';
+import { getEvent, reserveAiEdit, releaseAiEdit, saveEdit, getAiUsage, getHiddenPresets, getPromptOverrides } from '../../../../lib/store';
 import { parseMultipart } from '../../../../lib/parseForm';
 import { readGuestId } from '../../../../lib/guest';
 import { requireAccess } from '../../../../lib/access';
@@ -10,6 +10,7 @@ import {
   publicPresets,
   keepsakeTextFor,
   presetLabel,
+  promptFor,
 } from '../../../../lib/presets';
 import { subjectFor } from '../../../../lib/templates';
 import { runEdit, isAiConfigured } from '../../../../lib/fal';
@@ -143,12 +144,13 @@ export default async function handler(req, res) {
     if (preset.needs.includes('selfie')) imageUrls.push(toDataUri(selfie));
     if (backdrop) imageUrls.push(toDataUri(photo));
 
-    const build = pad && preset.buildLockedPrompt ? preset.buildLockedPrompt : preset.buildPrompt;
-    const prompt = build({
-      referenceCount: references.length,
-      keepsakeText: keepsakeTextFor(event),
-      subject: subjectFor(event),
-    });
+    // The padded "lock" path keeps its own built-in prompt; everything else
+    // uses the admin's edited prompt when there is one.
+    const promptArgs = { subject: subjectFor(event), keepsakeText: keepsakeTextFor(event) };
+    const prompt =
+      pad && preset.buildLockedPrompt
+        ? preset.buildLockedPrompt({ ...promptArgs, referenceCount: references.length })
+        : promptFor(presetId, promptArgs, await getPromptOverrides());
     if (/NaN|undefined|\[object/.test(prompt)) {
       throw new Error(`Prompt for ${presetId} is malformed`);
     }

@@ -826,3 +826,42 @@ textarea:focus-visible {
   pointer-events: none;
   align-self: flex-start;
 }
+
+/* Prompt editor */
+.prompt-sheet {
+  max-width: 640px;
+  max-height: 88vh;
+  overflow-y: auto;
+}
+
+.prompt-text {
+  width: 100%;
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 13px;
+  line-height: 1.45;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: #fff;
+  color: var(--ink);
+  resize: vertical;
+}
+
+.prompt-sheet .btn-secondary {
+  color: var(--ink);
+  border-color: var(--line);
+}
+
+.tiny-tag {
+  display: inline-block;
+  margin-left: 4px;
+  font-size: 10.5px;
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.tiny-tag.is-warn {
+  background: #e2a73b;
+  color: #14181c;
+}

@@ -7,9 +7,9 @@
 import { put, del } from '@vercel/blob';
 import { nanoid } from 'nanoid';
 import { isAdminRequest } from '../../../lib/auth';
-import { getGlobalSamples, setGlobalSamples } from '../../../lib/store';
+import { getGlobalSamples, setGlobalSamples, getPromptOverrides } from '../../../lib/store';
 import { parseMultipart } from '../../../lib/parseForm';
-import { PRESETS } from '../../../lib/presets';
+import { PRESETS, promptFor, promptFingerprint } from '../../../lib/presets';
 import { runEdit, isAiConfigured } from '../../../lib/fal';
 
 export const config = { api: { bodyParser: false }, maxDuration: 90 };
@@ -61,7 +61,7 @@ export default async function handler(req, res) {
     if (!file) return res.status(400).json({ error: 'No file uploaded' });
     await removeAll(samples);
     const blob = await put(`samples/source-${nanoid(6)}.jpg`, file.buffer, { access: 'public', contentType: 'image/jpeg' });
-    const next = { sampleUrl: blob.url, previews: {} };
+    const next = { sampleUrl: blob.url, previews: {}, madeWith: {} };
     await setGlobalSamples(next);
     return res.status(201).json(next);
   }
@@ -73,7 +73,8 @@ export default async function handler(req, res) {
   if (!samples.sampleUrl) return res.status(400).json({ error: 'Upload a sample photo first.' });
 
   try {
-    const prompt = preset.buildPrompt({ referenceCount: 0, keepsakeText: 'Sample Event · Jan 1, 2026', subject: 'the couple' });
+    const overrides = await getPromptOverrides();
+    const prompt = promptFor(presetId, { subject: 'the couple', keepsakeText: 'Sample Event · Jan 1, 2026' }, overrides);
     const result = await runEdit({ prompt, imageUrls: [samples.sampleUrl], model: preset.model });
     const blob = await put(`samples/${presetId}-${nanoid(6)}.jpg`, await fetchBuffer(result.url), {
       access: 'public',
@@ -82,7 +83,11 @@ export default async function handler(req, res) {
     const previews = { ...(samples.previews || {}) };
     if (previews[presetId]) await del(previews[presetId]).catch(() => {});
     previews[presetId] = blob.url;
-    const next = { ...samples, previews };
+    // Remember which prompt made this sample, so an edited prompt shows as
+    // out of date in the library.
+    const template = overrides[presetId] || null;
+    const madeWith = { ...(samples.madeWith || {}), [presetId]: template ? promptFingerprint(template) : 'default' };
+    const next = { ...samples, previews, madeWith };
     await setGlobalSamples(next);
     return res.status(200).json(next);
   } catch (err) {

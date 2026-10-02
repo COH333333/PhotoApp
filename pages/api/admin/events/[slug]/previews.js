@@ -7,8 +7,8 @@
 import { put, del } from '@vercel/blob';
 import { nanoid } from 'nanoid';
 import { isAdminRequest } from '../../../../../lib/auth';
-import { getEvent, updateEvent } from '../../../../../lib/store';
-import { PRESETS, keepsakeTextFor } from '../../../../../lib/presets';
+import { getEvent, updateEvent, getPromptOverrides } from '../../../../../lib/store';
+import { PRESETS, keepsakeTextFor, promptFor } from '../../../../../lib/presets';
 import { subjectFor } from '../../../../../lib/templates';
 import { runEdit, isAiConfigured } from '../../../../../lib/fal';
 
@@ -59,11 +59,7 @@ export default async function handler(req, res) {
 
   try {
     const preset = PRESETS[presetId];
-    const prompt = preset.buildPrompt({
-      referenceCount: 0,
-      keepsakeText: keepsakeTextFor(event),
-      subject: subjectFor(event),
-    });
+    const prompt = promptFor(presetId, { subject: subjectFor(event), keepsakeText: keepsakeTextFor(event) }, await getPromptOverrides());
     const result = await runEdit({ prompt, imageUrls: [sampleUrl], model: preset.model });
     const blob = await put(`previews/${slug}/${presetId}-${nanoid(6)}.jpg`, await fetchBuffer(result.url), {
       access: 'public',

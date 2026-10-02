@@ -2,8 +2,8 @@ import { useState } from 'react';
 import Head from 'next/head';
 import Link from 'next/link';
 import { isAdminRequest } from '../../lib/auth';
-import { getGlobalSamples, getHiddenPresets } from '../../lib/store';
-import { presetSummaries, DEFAULT_COST } from '../../lib/presets';
+import { getGlobalSamples, getHiddenPresets, getPromptOverrides } from '../../lib/store';
+import { presetSummaries, DEFAULT_COST, defaultPromptTemplate } from '../../lib/presets';
 import { isAiConfigured } from '../../lib/fal';
 import { preparePhoto } from '../../lib/heicConvert';
 
@@ -12,13 +12,108 @@ import { preparePhoto } from '../../lib/heicConvert';
 export async function getServerSideProps({ req }) {
   if (!isAdminRequest(req)) return { redirect: { destination: '/admin/login', permanent: false } };
   const samples = await getGlobalSamples();
-  const all = presetSummaries({}).map((p) => ({ id: p.id, label: p.label, blurb: p.blurb, previewable: p.previewable }));
+  // Prompts are sent only to this signed-in page, never to guests.
+  const all = presetSummaries({}).map((p) => ({
+    id: p.id,
+    label: p.label,
+    blurb: p.blurb,
+    previewable: p.previewable,
+    defaultPrompt: defaultPromptTemplate(p.id),
+  }));
+  const overrides = await getPromptOverrides();
   return {
-    props: { samples, all, initialHidden: await getHiddenPresets(), aiConfigured: isAiConfigured(), cost: DEFAULT_COST },
+    props: {
+      samples,
+      all,
+      initialHidden: await getHiddenPresets(),
+      initialOverrides: overrides,
+      aiConfigured: isAiConfigured(),
+      cost: DEFAULT_COST,
+    },
   };
 }
 
-export default function SamplesPage({ samples: initial, all, initialHidden, aiConfigured, cost }) {
+function fingerprint(text) {
+  let h = 0;
+  for (let i = 0; i < text.length; i++) h = (Math.imul(31, h) + text.charCodeAt(i)) | 0;
+  return (h >>> 0).toString(36);
+}
+
+function PromptEditor({ style, override, onSave, onClose }) {
+  const [text, setText] = useState(override || style.defaultPrompt);
+  const [state, setState] = useState('');
+  const changed = text.trim() !== (override || style.defaultPrompt).trim();
+
+  async function save(value) {
+    setState('Saving…');
+    const ok = await onSave(style.id, value);
+    setState(ok ? 'Saved' : 'Could not save');
+  }
+
+  return (
+    <div className="sheet-backdrop" onClick={onClose}>
+      <div className="sheet prompt-sheet" onClick={(e) => e.stopPropagation()} role="dialog" aria-label={`${style.label} prompt`}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 8 }}>
+          <p className="display" style={{ fontSize: 17, margin: 0 }}>{style.label}</p>
+          <span className="muted" style={{ fontSize: 12 }}>{override ? 'Edited' : 'Built-in prompt'}</span>
+        </div>
+        <p className="muted" style={{ fontSize: 12.5, margin: '6px 0 10px' }}>
+          Sent to the AI with the guest's photo. <code>{'{subject}'}</code> becomes who the event is for
+          (e.g. "the couple"); <code>{'{keepsake_text}'}</code> becomes the keepsake frame text. Applies to
+          every event as soon as you save.
+        </p>
+        <textarea
+          className="prompt-text"
+          value={text}
+          onChange={(e) => { setText(e.target.value); setState(''); }}
+          rows={12}
+          spellCheck
+        />
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginTop: 10 }}>
+          <button className="btn btn-primary" disabled={!changed || state === 'Saving…'} onClick={() => save(text)}>Save</button>
+          {override && (
+            <button
+              className="btn btn-secondary"
+              onClick={() => { setText(style.defaultPrompt); save(''); }}
+            >
+              Reset to built-in
+            </button>
+          )}
+          <button className="btn btn-secondary" onClick={onClose}>Close</button>
+          {state && <span className="muted" role="status">{state}</span>}
+        </div>
+        <p className="muted" style={{ fontSize: 12, marginTop: 10, marginBottom: 0 }}>
+          Tip: keep the lines about keeping every person recognizable and the same number of people —
+          they're what stop the AI changing faces or inventing guests.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+export default function SamplesPage({ samples: initial, all, initialHidden, initialOverrides, aiConfigured, cost }) {
+  const [overrides, setOverrides] = useState(initialOverrides);
+  const [editing, setEditing] = useState(null);
+
+  async function savePrompt(id, text) {
+    const res = await fetch('/api/admin/prompts', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id, text }),
+    });
+    if (!res.ok) return false;
+    setOverrides((await res.json()).overrides);
+    return true;
+  }
+
+  // A sample is out of date when its prompt changed after it was made.
+  function isStale(id) {
+    const made = samples.madeWith?.[id];
+    if (!samples.previews?.[id] || made === undefined) return false;
+    const current = overrides[id] ? fingerprint(overrides[id]) : 'default';
+    return made !== current;
+  }
+
   const [samples, setSamples] = useState(initial);
   const [hidden, setHidden] = useState(initialHidden);
   const styles = all.filter((p) => p.previewable && !hidden.includes(p.id));
@@ -152,8 +247,19 @@ export default function SamplesPage({ samples: initial, all, initialHidden, aiCo
                       {busy === p.id ? 'Making…' : 'Make'}
                     </button>
                   )}
-                  <span className="muted" style={{ fontSize: 12, display: 'block', marginTop: 4 }}>{p.label}</span>
-                  <div style={{ display: 'flex', justifyContent: 'center', gap: 8 }}>
+                  <span className="muted" style={{ fontSize: 12, display: 'block', marginTop: 4 }}>
+                    {p.label}
+                    {overrides[p.id] && <span className="tiny-tag">edited</span>}
+                    {isStale(p.id) && <span className="tiny-tag is-warn">sample out of date</span>}
+                  </span>
+                  <div style={{ display: 'flex', justifyContent: 'center', gap: 8, flexWrap: 'wrap' }}>
+                    <button
+                      className="muted"
+                      style={{ background: 'none', border: 0, fontSize: 11.5, cursor: 'pointer', textDecoration: 'underline' }}
+                      onClick={() => setEditing(p)}
+                    >
+                      prompt
+                    </button>
                     {samples.previews?.[p.id] && (
                       <button className="muted" style={{ background: 'none', border: 0, fontSize: 11.5, cursor: 'pointer', textDecoration: 'underline' }} disabled={busy !== null} onClick={() => make(p.id)}>
                         remake
@@ -181,8 +287,14 @@ export default function SamplesPage({ samples: initial, all, initialHidden, aiCo
             <p className="muted" style={{ fontSize: 12.5, marginTop: 0 }}>These use the guest's own input, so they have no sample.</p>
             {all.filter((p) => !p.previewable && !hidden.includes(p.id)).map((p) => (
               <div key={p.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0' }}>
-                <span><strong>{p.label}</strong> <span className="muted">{p.blurb}</span></span>
-                <button className="btn btn-secondary" style={{ padding: '4px 10px', fontSize: 12 }} onClick={() => setStyleHidden(p.id, true)}>Remove</button>
+                <span>
+                  <strong>{p.label}</strong> <span className="muted">{p.blurb}</span>
+                  {overrides[p.id] && <span className="tiny-tag">edited</span>}
+                </span>
+                <span style={{ display: 'flex', gap: 6 }}>
+                  <button className="btn btn-secondary" style={{ padding: '4px 10px', fontSize: 12 }} onClick={() => setEditing(p)}>Prompt</button>
+                  <button className="btn btn-secondary" style={{ padding: '4px 10px', fontSize: 12 }} onClick={() => setStyleHidden(p.id, true)}>Remove</button>
+                </span>
               </div>
             ))}
 
@@ -200,6 +312,15 @@ export default function SamplesPage({ samples: initial, all, initialHidden, aiCo
           </div>
         </div>
       </div>
+      {editing && (
+        <PromptEditor
+          key={editing.id}
+          style={editing}
+          override={overrides[editing.id] || null}
+          onSave={savePrompt}
+          onClose={() => setEditing(null)}
+        />
+      )}
     </div>
   );
 }
