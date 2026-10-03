@@ -197,7 +197,58 @@ export default function SamplesPage({ samples: initial, all, initialHidden, init
     if (res.ok) setSamples(await res.json());
   }
 
+  const [zipState, setZipState] = useState('');
+
+  // Fetches every sample through our own API (one small request each, so no
+  // size limits or cross-site rules get in the way), zips them in the
+  // browser, and saves the file.
+  async function downloadAllSamples() {
+    const list = all.filter((p) => samples.previews?.[p.id]);
+    if (!list.length) return;
+    const { default: JSZip } = await import('jszip');
+    const zip = new JSZip();
+    let done = 0;
+    const failed = [];
+    const pad = String(list.length).length;
+    async function grab(id, name) {
+      const res = await fetch(`/api/admin/sample-image?id=${encodeURIComponent(id)}`);
+      if (!res.ok) throw new Error(id);
+      zip.file(name, await res.blob());
+    }
+    if (samples.sampleUrl) {
+      await grab('source', '00 - Original sample photo.jpg').catch(() => failed.push('Original'));
+    }
+    // A few at a time: quick, without opening fifty requests at once.
+    const queue = list.map((p, i) => ({ p, i }));
+    async function worker() {
+      while (queue.length) {
+        const { p, i } = queue.shift();
+        const safe = p.label.replace(/[\\/:*?"<>|]+/g, '-');
+        try {
+          await grab(p.id, `${String(i + 1).padStart(pad, '0')} - ${safe}.jpg`);
+        } catch {
+          failed.push(p.label);
+        }
+        done += 1;
+        setZipState(`Collecting ${done}/${list.length}…`);
+      }
+    }
+    setZipState(`Collecting 0/${list.length}…`);
+    await Promise.all([worker(), worker(), worker(), worker()]);
+    setZipState('Zipping…');
+    const blob = await zip.generateAsync({ type: 'blob' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `moment-share-style-samples-${new Date().toISOString().slice(0, 10)}.zip`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 30_000);
+    setZipState(failed.length ? `Saved, but ${failed.length} couldn't be fetched: ${failed.join(', ')}` : 'Saved.');
+  }
+
   const made = styles.filter((p) => samples.previews?.[p.id]).length;
+  const totalSamples = all.filter((p) => samples.previews?.[p.id]).length;
   const missing = styles.length - made;
 
   return (
@@ -215,6 +266,17 @@ export default function SamplesPage({ samples: initial, all, initialHidden, init
           best on a scene, not a close-up. <strong>Remove</strong> takes a style out of the whole app
           (every event); it can be restored from the bottom of this page.
         </p>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginTop: 12 }}>
+          <a className="btn btn-secondary" href="/api/admin/prompts-export">Download prompts (Excel)</a>
+          <button
+            className="btn btn-secondary"
+            disabled={!totalSamples || (zipState && !/^Saved/.test(zipState))}
+            onClick={() => downloadAllSamples().catch(() => setZipState('Something went wrong. Try again.'))}
+          >
+            Download all samples ({totalSamples}) as .zip
+          </button>
+          {zipState && <span className="muted" role="status">{zipState}</span>}
+        </div>
 
         <div className="admin-grid" style={{ marginTop: 24 }}>
           <div className="card" style={{ height: 'fit-content' }}>
