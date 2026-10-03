@@ -106,13 +106,22 @@ export default function SamplesPage({ samples: initial, all, initialHidden, init
     return true;
   }
 
-  // A sample is out of date when its prompt changed after it was made.
+  // A sample is out of date when the prompt it was made with differs from
+  // the one that would be used now, whether edited here or changed in code.
+  // Samples from before fingerprints were recorded say 'default'; of those,
+  // only the styles whose built-in prompt was rewritten since are flagged.
+  const REWRITTEN = [
+    'jazz-1920s', 'fifties', 'seventies', 'nineties', 'y2k', 'victorian', 'saigon-1960s',
+    'royal-court', 'red-carpet', 'hoi-an', 'year-2085', 'throwback-1985',
+  ];
   function isStale(id) {
     const made = samples.madeWith?.[id];
     if (!samples.previews?.[id] || made === undefined) return false;
-    const current = overrides[id] ? fingerprint(overrides[id]) : 'default';
-    return made !== current;
+    if (made === 'default') return !overrides[id] ? REWRITTEN.includes(id) : true;
+    const style = all.find((p) => p.id === id);
+    return made !== fingerprint(overrides[id] || style.defaultPrompt);
   }
+
 
   const [samples, setSamples] = useState(initial);
   const [hidden, setHidden] = useState(initialHidden);

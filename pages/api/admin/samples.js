@@ -9,7 +9,7 @@ import { nanoid } from 'nanoid';
 import { isAdminRequest } from '../../../lib/auth';
 import { getGlobalSamples, setGlobalSamples, getPromptOverrides } from '../../../lib/store';
 import { parseMultipart } from '../../../lib/parseForm';
-import { PRESETS, promptFor, promptFingerprint } from '../../../lib/presets';
+import { PRESETS, promptFor, promptFingerprint, defaultPromptTemplate } from '../../../lib/presets';
 import { runEdit, isAiConfigured } from '../../../lib/fal';
 
 export const config = { api: { bodyParser: false }, maxDuration: 90 };
@@ -85,8 +85,8 @@ export default async function handler(req, res) {
     previews[presetId] = blob.url;
     // Remember which prompt made this sample, so an edited prompt shows as
     // out of date in the library.
-    const template = overrides[presetId] || null;
-    const madeWith = { ...(samples.madeWith || {}), [presetId]: template ? promptFingerprint(template) : 'default' };
+    const template = overrides[presetId] || defaultPromptTemplate(presetId);
+    const madeWith = { ...(samples.madeWith || {}), [presetId]: promptFingerprint(template) };
     const next = { ...samples, previews, madeWith };
     await setGlobalSamples(next);
     return res.status(200).json(next);
