@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import Head from 'next/head';
 import Link from 'next/link';
+import ImageViewer from '../../components/ImageViewer';
 import { isAdminRequest } from '../../lib/auth';
 import { getGlobalSamples, getHiddenPresets, getPromptOverrides } from '../../lib/store';
 import { presetSummaries, DEFAULT_COST, defaultPromptTemplate } from '../../lib/presets';
@@ -247,6 +248,16 @@ export default function SamplesPage({ samples: initial, all, initialHidden, init
     setZipState(failed.length ? `Saved, but ${failed.length} couldn't be fetched: ${failed.join(', ')}` : 'Saved.');
   }
 
+  // The viewer walks through the samples in the same order as the grid.
+  const [viewing, setViewing] = useState(null);
+  const viewerItems = styles
+    .filter((p) => samples.previews?.[p.id])
+    .map((p) => ({ id: p.id, url: samples.previews[p.id], title: p.label, subtitle: p.blurb }));
+  function openViewer(id) {
+    const i = viewerItems.findIndex((x) => x.id === id);
+    if (i >= 0) setViewing(i);
+  }
+
   const made = styles.filter((p) => samples.previews?.[p.id]).length;
   const totalSamples = all.filter((p) => samples.previews?.[p.id]).length;
   const missing = styles.length - made;
@@ -307,7 +318,9 @@ export default function SamplesPage({ samples: initial, all, initialHidden, init
               {styles.map((p) => (
                 <div key={p.id} style={{ width: 120, textAlign: 'center' }}>
                   {samples.previews?.[p.id] ? (
-                    <img src={samples.previews[p.id]} alt={p.label} style={{ width: 120, height: 120, objectFit: 'cover', borderRadius: 3 }} />
+                    <button className="thumb-button" onClick={() => openViewer(p.id)} aria-label={`View ${p.label} larger`}>
+                      <img src={samples.previews[p.id]} alt={p.label} style={{ width: 120, height: 120, objectFit: 'cover', borderRadius: 3 }} />
+                    </button>
                   ) : (
                     <button
                       className="btn btn-secondary"
@@ -383,6 +396,14 @@ export default function SamplesPage({ samples: initial, all, initialHidden, init
           </div>
         </div>
       </div>
+      {viewing !== null && viewerItems.length > 0 && (
+        <ImageViewer
+          items={viewerItems}
+          startIndex={Math.min(viewing, viewerItems.length - 1)}
+          original={samples.sampleUrl}
+          onClose={() => setViewing(null)}
+        />
+      )}
       {editing && (
         <PromptEditor
           key={editing.id}

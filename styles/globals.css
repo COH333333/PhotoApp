@@ -865,3 +865,49 @@ textarea:focus-visible {
   background: #e2a73b;
   color: #14181c;
 }
+
+/* Image viewer (Style library, event previews) */
+.lightbox-close {
+  position: absolute;
+  top: 8px;
+  right: 10px;
+  width: 40px;
+  height: 40px;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+  font-size: 26px;
+  line-height: 1;
+  cursor: pointer;
+  z-index: 2;
+}
+
+.viewer-caption {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  color: #fff;
+  text-align: center;
+  font-size: 15px;
+}
+
+.viewer-caption span {
+  font-size: 12.5px;
+  color: rgba(255, 255, 255, 0.65);
+  max-width: 520px;
+}
+
+@media (hover: none) {
+  /* Phones can swipe, but the arrows stay as a visible hint here. */
+  .lightbox-arrow.viewer-arrow { display: block; width: 36px; height: 52px; font-size: 28px; }
+}
+
+.thumb-button {
+  display: block;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: zoom-in;
+}

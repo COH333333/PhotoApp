@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import Head from 'next/head';
 import Link from 'next/link';
 import { isAdminRequest } from '../../../lib/auth';
-import { getEvent, listAllPhotos, getAiUsage, getHiddenPresets } from '../../../lib/store';
+import { getEvent, listAllPhotos, getAiUsage, getHiddenPresets, getGlobalSamples } from '../../../lib/store';
 // Deliberately NOT importing PRESETS or maxCostFor here: referencing them in
 // the rendered component pulls lib/presets into the client bundle, prompts and
 // all, and that bundle is fetchable by any guest. Everything this page needs
@@ -21,6 +21,7 @@ import { isStreamConfigured, MAX_VIDEO_SECONDS } from '../../../lib/stream';
 import { preparePhoto } from '../../../lib/heicConvert';
 import QRCodeCard from '../../../components/QRCodeCard';
 import ColorField from '../../../components/ColorField';
+import ImageViewer from '../../../components/ImageViewer';
 import { guestLink, albumLink, wallLink } from '../../../lib/access';
 import { uploadsState } from '../../../lib/eventState';
 
@@ -52,6 +53,7 @@ export async function getServerSideProps({ req, params }) {
       uploads: uploadsState(event),
       allPresets,
       templates: templateOptions(),
+      globalSamples: await getGlobalSamples(),
       subject: subjectFor(event),
       aiConfigured: isAiConfigured(),
       videoConfigured: isStreamConfigured(),
@@ -74,6 +76,7 @@ export default function AdminEventDetail({
   uploads,
   allPresets,
   templates,
+  globalSamples,
   subject,
   aiConfigured,
   videoConfigured,
@@ -136,6 +139,28 @@ export default function AdminEventDetail({
       setPreviewBusy(null);
     }
   }
+
+  // What guests actually see for each style: this event's own sample if it
+  // has one, otherwise the app-wide one from the Style library.
+  const eventSource = event.sampleUrl || backdrops[0]?.url || references[0]?.url || null;
+  function effectivePreview(id) {
+    if (previews[id]) return { url: previews[id], own: true, original: eventSource };
+    const g = globalSamples?.previews?.[id];
+    return g ? { url: g, own: false, original: globalSamples.sampleUrl } : null;
+  }
+  const [viewing, setViewing] = useState(null);
+  const previewItems = allPresets
+    .filter((p) => p.previewable && enabled.includes(p.id) && effectivePreview(p.id))
+    .map((p) => {
+      const e = effectivePreview(p.id);
+      return {
+        id: p.id,
+        url: e.url,
+        title: p.label,
+        subtitle: e.own ? 'This event\'s own sample' : 'App-wide sample from the Style library',
+        original: e.original,
+      };
+    });
 
   async function makeMissingPreviews() {
     setPreviewLog('');
@@ -678,8 +703,24 @@ export default function AdminEventDetail({
                 {allPresets.filter((p) => p.previewable && enabled.includes(p.id)).map((p) => (
                   <div key={p.id} style={{ width: 96, textAlign: 'center' }}>
                     <div style={{ position: 'relative' }}>
-                      {previews[p.id] ? (
-                        <img src={previews[p.id]} alt={p.label} style={{ width: 96, height: 96, objectFit: 'cover', borderRadius: 3 }} />
+                      {effectivePreview(p.id) ? (
+                        <button
+                          className="thumb-button"
+                          onClick={() => setViewing(previewItems.findIndex((x) => x.id === p.id))}
+                          aria-label={`View ${p.label} larger`}
+                        >
+                          <img
+                            src={effectivePreview(p.id).url}
+                            alt={p.label}
+                            style={{
+                              width: 96,
+                              height: 96,
+                              objectFit: 'cover',
+                              borderRadius: 3,
+                              opacity: previews[p.id] ? 1 : 0.85,
+                            }}
+                          />
+                        </button>
                       ) : (
                         <button
                           className="btn btn-secondary"
@@ -694,10 +735,30 @@ export default function AdminEventDetail({
                         <button onClick={() => removePreview(p.id)} aria-label="Remove preview" className="remove-dot">×</button>
                       )}
                     </div>
-                    <span className="muted" style={{ fontSize: 11.5, display: 'block', marginTop: 4 }}>{p.label}</span>
+                    <span className="muted" style={{ fontSize: 11.5, display: 'block', marginTop: 4 }}>
+                      {p.label}
+                      {!previews[p.id] && effectivePreview(p.id) && <span className="tiny-tag">app-wide</span>}
+                    </span>
+                    {!previews[p.id] && effectivePreview(p.id) && (
+                      <button
+                        type="button"
+                        style={{ background: 'none', border: 0, fontSize: 11, cursor: 'pointer', textDecoration: 'underline', color: 'inherit', opacity: 0.7 }}
+                        disabled={previewBusy !== null}
+                        onClick={() => { setPreviewLog(''); makePreview(p.id); }}
+                      >
+                        {previewBusy === p.id ? 'making…' : 'make own'}
+                      </button>
+                    )}
                   </div>
                 ))}
               </div>
+              {viewing !== null && previewItems.length > 0 && (
+                <ImageViewer
+                  items={previewItems}
+                  startIndex={Math.max(0, Math.min(viewing, previewItems.length - 1))}
+                  onClose={() => setViewing(null)}
+                />
+              )}
               <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
                 <button type="button" className="btn btn-primary" disabled={previewBusy !== null || !aiConfigured} onClick={makeMissingPreviews}>
                   Make previews for enabled styles
