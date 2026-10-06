@@ -38,12 +38,25 @@ export default function ImageViewer({ items, startIndex = 0, original = null, on
   }
 
   // Keeps the image from being dragged out of sight.
+  // The photo is drawn "contain" inside a screen-sized box, so its visible
+  // size is the box scaled to the photo's shape.
+  function drawnSize(img) {
+    const bw = img.offsetWidth;
+    const bh = img.offsetHeight;
+    const nw = img.naturalWidth || bw;
+    const nh = img.naturalHeight || bh;
+    const fit = Math.min(bw / nw, bh / nh);
+    return { w: nw * fit, h: nh * fit, bw, bh };
+  }
+
   function clamp(next) {
     const img = imgRef.current;
     if (!img) return next;
     const scale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, next.scale));
-    const maxX = ((scale - 1) * img.offsetWidth) / 2;
-    const maxY = ((scale - 1) * img.offsetHeight) / 2;
+    const { w, h, bw, bh } = drawnSize(img);
+    // Allow panning until the photo's edge meets the box edge.
+    const maxX = Math.max(0, (w * scale - bw) / 2);
+    const maxY = Math.max(0, (h * scale - bh) / 2);
     return {
       scale,
       x: Math.min(maxX, Math.max(-maxX, next.x)),
@@ -258,31 +271,29 @@ export default function ImageViewer({ items, startIndex = 0, original = null, on
         />
       </div>
 
-      <div className="viewer-controls" onClick={(e) => e.stopPropagation()}>
-        <button aria-label="Zoom out" onClick={() => zoomBy(1 / STEP)} disabled={!zoomed}>−</button>
-        <button className="viewer-zoom-level" onClick={reset} disabled={!zoomed} aria-label="Reset zoom">
-          {Math.round(view.scale * 100)}%
-        </button>
-        <button aria-label="Zoom in" onClick={() => zoomBy(STEP)} disabled={view.scale >= MAX_SCALE}>+</button>
+      <div className="viewer-bar" onClick={(e) => e.stopPropagation()}>
+        <div className="viewer-controls">
+          <button aria-label="Zoom out" onClick={() => zoomBy(1 / STEP)} disabled={!zoomed}>−</button>
+          <button className="viewer-zoom-level" onClick={reset} disabled={!zoomed} aria-label="Reset zoom">
+            {Math.round(view.scale * 100)}%
+          </button>
+          <button aria-label="Zoom in" onClick={() => zoomBy(STEP)} disabled={view.scale >= MAX_SCALE}>+</button>
+        </div>
+        <div className="viewer-caption">
+          <strong>{showOriginal ? 'Original photo' : item.title}</strong>
+          {!showOriginal && item.subtitle && <span>{item.subtitle}</span>}
+        </div>
+        {source && item.url !== source ? (
+          <button
+            className="btn btn-secondary viewer-compare"
+            onClick={() => setShowOriginal((v) => !v)}
+          >
+            {showOriginal ? `Show ${item.title}` : 'Compare with original'}
+          </button>
+        ) : (
+          <span className="viewer-compare-spacer" />
+        )}
       </div>
-
-      <div className="viewer-caption" onClick={(e) => e.stopPropagation()}>
-        <strong>{showOriginal ? 'Original photo' : item.title}</strong>
-        {!showOriginal && item.subtitle && <span>{item.subtitle}</span>}
-      </div>
-      {source && item.url !== source && (
-        <button
-          className="btn btn-secondary"
-          style={{ color: '#fff', borderColor: 'rgba(255,255,255,0.35)' }}
-          onClick={(e) => {
-            e.stopPropagation();
-            // Keep the same zoom and position so the two can be compared spot for spot.
-            setShowOriginal((v) => !v);
-          }}
-        >
-          {showOriginal ? `Show ${item.title}` : 'Compare with original'}
-        </button>
-      )}
     </div>
   );
 }
