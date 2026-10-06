@@ -705,6 +705,8 @@ textarea:focus-visible {
 }
 
 .lightbox-arrow.is-left { left: 8px; }
+/* Stay above a zoomed photo. */
+.lightbox-arrow.viewer-arrow { z-index: 3; }
 .lightbox-arrow.is-right { right: 8px; }
 
 .lightbox-count {

@@ -2,7 +2,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 // Full-screen viewer for a set of images.
 //
-//   Move between images: arrows, arrow keys, or swipe (when not zoomed).
+//   Move between images: the side arrows and arrow keys (always, at any
+//   zoom), or swipe when not zoomed (when zoomed, dragging looks around).
 //   Zoom: pinch, double-tap / double-click, mouse wheel, the + / − buttons,
 //         or the + / − / 0 keys. Drag to look around while zoomed.
 //   Close: ×, Esc, or tapping the dark area.
@@ -91,8 +92,8 @@ export default function ImageViewer({ items, startIndex = 0, original = null, on
 
   useEffect(() => {
     function onKey(e) {
-      if (e.key === 'ArrowRight' && !zoomed) go(1);
-      else if (e.key === 'ArrowLeft' && !zoomed) go(-1);
+      if (e.key === 'ArrowRight') go(1);
+      else if (e.key === 'ArrowLeft') go(-1);
       else if (e.key === 'Escape') (zoomed ? reset() : onClose());
       else if (e.key === '+' || e.key === '=') zoomBy(STEP);
       else if (e.key === '-' || e.key === '_') zoomBy(1 / STEP);
@@ -237,12 +238,12 @@ export default function ImageViewer({ items, startIndex = 0, original = null, on
       <button className="lightbox-close" aria-label="Close" onClick={(e) => { e.stopPropagation(); onClose(); }}>
         ×
       </button>
-      {index > 0 && !zoomed && (
+      {index > 0 && (
         <button className="lightbox-arrow is-left viewer-arrow" aria-label="Previous" onClick={(e) => { e.stopPropagation(); go(-1); }}>
           ‹
         </button>
       )}
-      {index < items.length - 1 && !zoomed && (
+      {index < items.length - 1 && (
         <button className="lightbox-arrow is-right viewer-arrow" aria-label="Next" onClick={(e) => { e.stopPropagation(); go(1); }}>
           ›
         </button>
