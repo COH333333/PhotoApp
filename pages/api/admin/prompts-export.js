@@ -1,7 +1,7 @@
 // Every style and its prompt as an Excel workbook. Host-only.
 import ExcelJS from 'exceljs';
 import { isAdminRequest } from '../../../lib/auth';
-import { getHiddenPresets, getPromptOverrides, getGlobalSamples, getPresetModels } from '../../../lib/store';
+import { getHiddenPresets, getPromptOverrides, getGlobalSamples, getPresetModels, getStyleCustom } from '../../../lib/store';
 import { PRESETS, presetSummaries, defaultPromptTemplate } from '../../../lib/presets';
 import { MODELS } from '../../../lib/models';
 
@@ -16,11 +16,12 @@ export default async function handler(req, res) {
   if (!isAdminRequest(req)) return res.status(401).json({ error: 'Not signed in' });
   if (req.method !== 'GET') return res.status(405).end();
 
-  const [hidden, overrides, samples, chosen] = await Promise.all([
+  const [hidden, overrides, samples, chosen, custom] = await Promise.all([
     getHiddenPresets(),
     getPromptOverrides(),
     getGlobalSamples(),
     getPresetModels(),
+    getStyleCustom(),
   ]);
 
   const wb = new ExcelJS.Workbook();
@@ -42,7 +43,7 @@ export default async function handler(req, res) {
     { header: 'Style ID', key: 'id', width: 18 },
   ];
 
-  for (const p of presetSummaries({}, [], chosen)) {
+  for (const p of presetSummaries({}, [], chosen, custom)) {
     const builtIn = defaultPromptTemplate(p.id);
     const edited = Boolean(overrides[p.id]);
     const sampleUrl = samples.previews?.[p.id] || null;

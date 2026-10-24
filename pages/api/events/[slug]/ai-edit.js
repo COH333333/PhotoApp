@@ -1,6 +1,6 @@
 import { nanoid } from 'nanoid';
 import { put } from '@vercel/blob';
-import { getEvent, reserveAiEdit, releaseAiEdit, saveEdit, getAiUsage, getHiddenPresets, getPromptOverrides, getPresetModels } from '../../../../lib/store';
+import { getEvent, reserveAiEdit, releaseAiEdit, saveEdit, getAiUsage, getHiddenPresets, getPromptOverrides, getPresetModels, getStyleCustom } from '../../../../lib/store';
 import { parseMultipart } from '../../../../lib/parseForm';
 import { readGuestId } from '../../../../lib/guest';
 import { requireAccess } from '../../../../lib/access';
@@ -206,7 +206,7 @@ export default async function handler(req, res) {
     slug,
     guestId,
     preset: presetId,
-    label: presetLabel(presetId, event),
+    label: presetLabel(presetId, event, await getStyleCustom()),
     model: tier,
     resultUrl: result.url,
     // True only when the couple's own pixels were composited back. False means

@@ -1085,3 +1085,34 @@ textarea:focus-visible {
   border-radius: 6px;
   font-size: 13.5px;
 }
+
+/* Style library: drag-and-drop reordering */
+.drag-handle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 3px;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  font-size: 16px;
+  line-height: 1;
+  opacity: 0.55;
+  flex: none;
+}
+.drag-handle:hover,
+.drag-handle:focus-visible { opacity: 1; background: rgba(127, 127, 127, 0.15); }
+.drag-handle:active { cursor: grabbing; }
+.style-tile > .drag-handle {
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  z-index: 2;
+  background: rgba(0, 0, 0, 0.45);
+  color: #fff;
+  opacity: 0.85;
+}
+.is-dragging { opacity: 0.45; outline: 2px dashed currentColor; outline-offset: 2px; border-radius: 3px; }

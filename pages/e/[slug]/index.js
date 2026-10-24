@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import Head from 'next/head';
 import Link from 'next/link';
-import { getEvent, getAiUsage, getGlobalSamples, getHiddenPresets } from '../../../lib/store';
+import { getEvent, getAiUsage, getGlobalSamples, getHiddenPresets, getStyleCustom } from '../../../lib/store';
 import { publicPresets, publicBackdrops } from '../../../lib/presets';
 import { isAiConfigured } from '../../../lib/fal';
 import { getOrCreateGuestId } from '../../../lib/guest';
@@ -31,7 +31,7 @@ export async function getServerSideProps(ctx) {
   }
 
   const aiOn = isAiConfigured();
-  const presets = aiOn ? publicPresets(event, (await getGlobalSamples()).previews, await getHiddenPresets()) : [];
+  const presets = aiOn ? publicPresets(event, (await getGlobalSamples()).previews, await getHiddenPresets(), await getStyleCustom()) : [];
   const limits = aiLimitsFor(event);
   // Issue the guest cookie here; the AI edit API requires it.
   const guestId = getOrCreateGuestId(req, res);
