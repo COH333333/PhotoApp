@@ -2,12 +2,15 @@
 // Style library can zip them all in the browser. Host-only.
 import { isAdminRequest } from '../../../lib/auth';
 import { getGlobalSamples } from '../../../lib/store';
+import { withVersions } from '../../../lib/samples';
 
 export default async function handler(req, res) {
   if (!isAdminRequest(req)) return res.status(401).json({ error: 'Not signed in' });
-  const { id } = req.query;
-  const samples = await getGlobalSamples();
-  const url = id === 'source' ? samples.sampleUrl : samples.previews?.[String(id)];
+  const { id, tier } = req.query;
+  const samples = withVersions(await getGlobalSamples());
+  const url = id === 'source'
+    ? samples.sampleUrl
+    : (tier && samples.versions?.[String(tier)]?.[String(id)]?.url) || samples.previews?.[String(id)];
   if (!url) return res.status(404).json({ error: 'No such sample' });
 
   const upstream = await fetch(url);

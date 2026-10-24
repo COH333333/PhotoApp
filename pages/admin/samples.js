@@ -5,6 +5,7 @@ import ImageViewer from '../../components/ImageViewer';
 import { MODELS } from '../../lib/models';
 import { isAdminRequest } from '../../lib/auth';
 import { getGlobalSamples, getHiddenPresets, getPromptOverrides, getPresetModels, getStyleCustom } from '../../lib/store';
+import { withVersions } from '../../lib/samples';
 import {
   presetSummaries,
   DEFAULT_COST,
@@ -22,7 +23,7 @@ import { preparePhoto } from '../../lib/heicConvert';
 // every event unless an event makes its own.
 export async function getServerSideProps({ req }) {
   if (!isAdminRequest(req)) return { redirect: { destination: '/admin/login', permanent: false } };
-  const samples = await getGlobalSamples();
+  const samples = withVersions(await getGlobalSamples());
   // Prompts are sent only to this signed-in page, never to guests.
   const chosen = await getPresetModels();
   const custom = await getStyleCustom();
@@ -338,10 +339,11 @@ export default function SamplesPage({ samples: initial, all: allBase, initialHid
     'jazz-1920s', 'fifties', 'seventies', 'nineties', 'y2k', 'victorian', 'saigon-1960s',
     'royal-court', 'red-carpet', 'hoi-an', 'year-2085', 'throwback-1985',
   ];
-  function isStale(id) {
-    if (modelStale(id)) return true;
-    const made = samples.madeWith?.[id];
-    if (!samples.previews?.[id] || made === undefined) return false;
+  // Checks the version currently shown on the tile (Full or Lite).
+  function isStale(id, tier = shownTier(id)) {
+    const v = versionOf(id, tier);
+    const made = v?.madeWith;
+    if (!v || made === undefined) return false;
     if (made === 'default') return !overrides[id] ? REWRITTEN.includes(id) : true;
     const style = all.find((p) => p.id === id);
     return made !== fingerprint(overrides[id] || style.defaultPrompt);
@@ -361,19 +363,44 @@ export default function SamplesPage({ samples: initial, all: allBase, initialHid
       body: JSON.stringify({ ids, tier }),
     });
     if (res.ok) {
-      setTiers((await res.json()).tiers);
+      const data = await res.json();
+      setTiers(data.tiers);
+      if (data.samples) setSamples(data.samples);
       setModelState(`Saved. Takes effect on the next edit at every event.`);
     } else {
       setModelState('Could not save. Try again.');
     }
   }
 
-  // Samples made before models were tracked were all made on Full.
-  function sampleModel(id) {
-    return samples.madeWithModel?.[id] || 'full';
+  // --- Full / Lite versions ---------------------------------------------
+  // Every style can have a sample made on each model. `view` picks what the
+  // whole grid shows ('use' = the model each style runs on, i.e. what guests
+  // get); a tile's own Full/Lite tab overrides that for one style.
+  const [view, setView] = useState('use');
+  const [tileTab, setTileTab] = useState({});
+  function versionOf(id, tier) {
+    return samples.versions?.[tier]?.[id] || null;
   }
+  function targetTier(id) {
+    return view === 'use' ? tiers[id] : view;
+  }
+  function shownTier(id) {
+    if (tileTab[id]) return tileTab[id];
+    // "What guests get": if the style's own model has no sample yet, guests
+    // are shown the other one, so show that here too.
+    if (view === 'use' && !versionOf(id, tiers[id]) && samples.madeWithModel?.[id]) return samples.madeWithModel[id];
+    return targetTier(id);
+  }
+  function shownUrl(id) {
+    return versionOf(id, shownTier(id))?.url || null;
+  }
+  function changeView(v) {
+    setView(v);
+    setTileTab({});
+  }
+  // Guests see the Full sample while a Lite-set style has no Lite sample yet.
   function modelStale(id) {
-    return Boolean(samples.previews?.[id]) && sampleModel(id) !== tiers[id];
+    return Boolean(samples.previews?.[id]) && samples.madeWithModel?.[id] !== tiers[id];
   }
   const styles = all.filter((p) => p.previewable && !hidden.includes(p.id));
   const removed = all.filter((p) => hidden.includes(p.id));
@@ -393,7 +420,7 @@ export default function SamplesPage({ samples: initial, all: allBase, initialHid
     const file = e.target.files?.[0];
     e.target.value = '';
     if (!file) return;
-    if (Object.keys(samples.previews || {}).length && !window.confirm('Replacing the photo removes every sample made from it. Continue?')) return;
+    if (Object.keys(samples.previews || {}).length && !window.confirm('Replacing the photo removes every sample (Full and Lite) made from it. Continue?')) return;
     setBusy('upload');
     try {
       const prepared = await preparePhoto(file);
@@ -408,13 +435,13 @@ export default function SamplesPage({ samples: initial, all: allBase, initialHid
     }
   }
 
-  async function make(id) {
+  async function make(id, tier = shownTier(id)) {
     setBusy(id);
     try {
       const res = await fetch('/api/admin/samples', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ presetId: id }),
+        body: JSON.stringify({ presetId: id, tier }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -432,24 +459,29 @@ export default function SamplesPage({ samples: initial, all: allBase, initialHid
   }
 
   const staleList = styles.filter((p) => isStale(p.id));
-  const staleCost = staleList.reduce((sum, p) => sum + MODELS[tiers[p.id]].cost, 0);
+  const staleCost = staleList.reduce((sum, p) => sum + MODELS[shownTier(p.id)].cost, 0);
 
   async function remakeStale() {
     setLog('');
-    const todo = [...staleList];
-    for (const p of todo) {
-      setLog(`Remaking ${p.label} on ${MODELS[tiers[p.id]].label}…`);
-      if (!(await make(p.id))) return;
+    const todo = staleList.map((p) => ({ p, t: shownTier(p.id) }));
+    for (const { p, t } of todo) {
+      setLog(`Remaking ${p.label} on ${MODELS[t].label}…`);
+      if (!(await make(p.id, t))) return;
     }
     setLog('Done.');
   }
 
-  async function makeAll(onlyMissing) {
+  // Missing samples for what the grid is showing: each style's own model, or
+  // every style on Full / on Lite.
+  const missingList = styles.filter((p) => !versionOf(p.id, targetTier(p.id)));
+  const missingCost = missingList.reduce((sum, p) => sum + MODELS[targetTier(p.id)].cost, 0);
+
+  async function makeAll() {
     setLog('');
-    const todo = styles.filter((p) => !onlyMissing || !samples.previews?.[p.id]);
-    for (const p of todo) {
-      setLog(`Making ${p.label}…`);
-      if (!(await make(p.id))) return;
+    const todo = missingList.map((p) => ({ p, t: targetTier(p.id) }));
+    for (const { p, t } of todo) {
+      setLog(`Making ${p.label} on ${MODELS[t].label}…`);
+      if (!(await make(p.id, t))) return;
     }
     setLog(todo.length ? 'Done.' : 'Every style already has a sample.');
   }
@@ -466,15 +498,15 @@ export default function SamplesPage({ samples: initial, all: allBase, initialHid
   // size limits or cross-site rules get in the way), zips them in the
   // browser, and saves the file.
   async function downloadAllSamples() {
-    const list = all.filter((p) => samples.previews?.[p.id]);
+    const list = all.filter((p) => shownUrl(p.id));
     if (!list.length) return;
     const { default: JSZip } = await import('jszip');
     const zip = new JSZip();
     let done = 0;
     const failed = [];
     const pad = String(list.length).length;
-    async function grab(id, name) {
-      const res = await fetch(`/api/admin/sample-image?id=${encodeURIComponent(id)}`);
+    async function grab(id, name, tier = '') {
+      const res = await fetch(`/api/admin/sample-image?id=${encodeURIComponent(id)}&tier=${tier}`);
       if (!res.ok) throw new Error(id);
       zip.file(name, await res.blob());
     }
@@ -488,7 +520,8 @@ export default function SamplesPage({ samples: initial, all: allBase, initialHid
         const { p, i } = queue.shift();
         const safe = p.label.replace(/[\\/:*?"<>|]+/g, '-');
         try {
-          await grab(p.id, `${String(i + 1).padStart(pad, '0')} - ${safe}.jpg`);
+          const t = shownTier(p.id);
+          await grab(p.id, `${String(i + 1).padStart(pad, '0')} - ${safe} (${MODELS[t].label}).jpg`, t);
         } catch {
           failed.push(p.label);
         }
@@ -513,21 +546,21 @@ export default function SamplesPage({ samples: initial, all: allBase, initialHid
   // The viewer walks through the samples in the same order as the grid.
   const [viewing, setViewing] = useState(null);
   const viewerItems = styles
-    .filter((p) => samples.previews?.[p.id])
+    .filter((p) => shownUrl(p.id))
     .map((p) => ({
       id: p.id,
-      url: samples.previews[p.id],
-      title: p.label,
-      subtitle: `${p.blurb} · made on ${MODELS[sampleModel(p.id)].label}`,
+      url: shownUrl(p.id),
+      title: `${p.label} · ${MODELS[shownTier(p.id)].label}`,
+      subtitle: `${p.blurb} · made on ${MODELS[shownTier(p.id)].label}${shownTier(p.id) === tiers[p.id] ? ' (what guests get)' : ''}`,
     }));
   function openViewer(id) {
     const i = viewerItems.findIndex((x) => x.id === id);
     if (i >= 0) setViewing(i);
   }
 
-  const made = styles.filter((p) => samples.previews?.[p.id]).length;
-  const totalSamples = all.filter((p) => samples.previews?.[p.id]).length;
-  const missing = styles.length - made;
+  const made = styles.length - missingList.length;
+  const totalSamples = all.filter((p) => shownUrl(p.id)).length;
+  const missing = missingList.length;
 
   return (
     <div className="admin-shell page">
@@ -578,14 +611,26 @@ export default function SamplesPage({ samples: initial, all: allBase, initialHid
           <div className="card">
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', flexWrap: 'wrap', gap: 8 }}>
               <h2 className="display" style={{ fontSize: 16, margin: 0 }}>Samples ({made}/{styles.length})</h2>
-              <span className="muted">{missing
-                  ? `${missing} to make · about $${styles
-                      .filter((p) => !samples.previews?.[p.id])
-                      .reduce((sum, p) => sum + MODELS[tiers[p.id]].cost, 0)
-                      .toFixed(2)}`
-                  : 'Complete'}</span>
+              <span className="muted">{missing ? `${missing} to make · about $${missingCost.toFixed(2)}` : 'Complete'}</span>
             </div>
             {!aiConfigured && <p className="notice-dark">AI isn't set up yet (FAL_KEY missing).</p>}
+            <div className="view-bar">
+              <span className="muted" style={{ fontSize: 12.5 }}>Show</span>
+              <span className="model-switch" role="group" aria-label="Which samples to show">
+                {[
+                  ['use', 'What guests get'],
+                  ['full', `All ${MODELS.full.label}`],
+                  ['lite', `All ${MODELS.lite.label}`],
+                ].map(([v, text]) => (
+                  <button key={v} type="button" className={view === v ? 'is-on' : ''} aria-pressed={view === v} onClick={() => changeView(v)}>
+                    {text}
+                  </button>
+                ))}
+              </span>
+              <span className="muted" style={{ fontSize: 12 }}>
+                Tap Full / Lite under any picture to compare one style. ★ = the model guests get.
+              </span>
+            </div>
             <p className="muted" style={{ fontSize: 12.5, margin: '10px 0 0' }}>
               Drag a style by its <span aria-hidden="true">⠿</span> handle to reorder. Guests and event pages
               show styles in this order.{' '}
@@ -608,28 +653,45 @@ export default function SamplesPage({ samples: initial, all: allBase, initialHid
                   }}
                 >
                   <DragHandle id={p.id} onStart={startDrag} label={p.label} />
-                  {samples.previews?.[p.id] ? (
-                    <button className="thumb-button" onClick={() => openViewer(p.id)} aria-label={`View ${p.label} larger`}>
-                      <img src={samples.previews[p.id]} alt={p.label} style={{ width: 120, height: 120, objectFit: 'cover', borderRadius: 3 }} />
+                  {shownUrl(p.id) ? (
+                    <button className="thumb-button" onClick={() => openViewer(p.id)} aria-label={`View ${p.label} (${MODELS[shownTier(p.id)].label}) larger`}>
+                      <img src={shownUrl(p.id)} alt={`${p.label}, ${MODELS[shownTier(p.id)].label}`} style={{ width: 120, height: 120, objectFit: 'cover', borderRadius: 3 }} />
                     </button>
                   ) : (
                     <button
                       className="btn btn-secondary"
                       style={{ width: 120, height: 120, padding: 0, fontSize: 12 }}
                       disabled={busy !== null || !samples.sampleUrl || !aiConfigured}
-                      onClick={() => { setLog(''); make(p.id); }}
+                      onClick={() => { setLog(''); make(p.id, shownTier(p.id)); }}
                     >
-                      {busy === p.id ? 'Making…' : 'Make'}
+                      {busy === p.id ? 'Making…' : `Make ${MODELS[shownTier(p.id)].label}`}
                     </button>
                   )}
+                  <div className="version-tabs" role="tablist" aria-label={`${p.label} versions`}>
+                    {Object.keys(MODELS).map((t) => (
+                      <button
+                        key={t}
+                        type="button"
+                        role="tab"
+                        aria-selected={shownTier(p.id) === t}
+                        className={`${shownTier(p.id) === t ? 'is-on' : ''}${versionOf(p.id, t) ? '' : ' is-empty'}`}
+                        title={`${versionOf(p.id, t) ? 'Show' : 'Not made yet:'} ${MODELS[t].name} sample${tiers[p.id] === t ? ' (guests get this model)' : ''}`}
+                        onClick={() => setTileTab((cur) => ({ ...cur, [p.id]: t }))}
+                      >
+                        {MODELS[t].label}
+                        {tiers[p.id] === t && <span aria-hidden="true"> ★</span>}
+                      </button>
+                    ))}
+                  </div>
                   <span className="muted" style={{ fontSize: 12, display: 'block', marginTop: 4 }}>
                     {p.label}
                     {p.renamed && <span className="tiny-tag">renamed</span>}
                     {overrides[p.id] && <span className="tiny-tag">edited</span>}
+                    {modelStale(p.id) && view === 'use' && !tileTab[p.id] && (
+                      <span className="tiny-tag is-warn">guests see the {MODELS[samples.madeWithModel?.[p.id] || 'full'].label} sample</span>
+                    )}
                     {isStale(p.id) && (
-                      <span className="tiny-tag is-warn">
-                        {modelStale(p.id) ? `sample made on ${MODELS[sampleModel(p.id)].label}` : 'sample out of date'}
-                      </span>
+                      <span className="tiny-tag is-warn">sample out of date</span>
                     )}
                   </span>
                   <ModelSwitch value={tiers[p.id]} onChange={(t) => setTier([p.id], t)} disabled={busy !== null} compact />
@@ -648,9 +710,9 @@ export default function SamplesPage({ samples: initial, all: allBase, initialHid
                     >
                       prompt
                     </button>
-                    {samples.previews?.[p.id] && (
-                      <button className="muted" style={{ background: 'none', border: 0, fontSize: 11.5, cursor: 'pointer', textDecoration: 'underline' }} disabled={busy !== null} onClick={() => make(p.id)}>
-                        remake
+                    {shownUrl(p.id) && (
+                      <button className="muted" style={{ background: 'none', border: 0, fontSize: 11.5, cursor: 'pointer', textDecoration: 'underline' }} disabled={busy !== null} onClick={() => make(p.id, shownTier(p.id))}>
+                        remake {MODELS[shownTier(p.id)].label}
                       </button>
                     )}
                     <button
@@ -665,8 +727,8 @@ export default function SamplesPage({ samples: initial, all: allBase, initialHid
               ))}
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-              <button className="btn btn-primary" disabled={busy !== null || !samples.sampleUrl || !aiConfigured} onClick={() => makeAll(true)}>
-                Make all missing
+              <button className="btn btn-primary" disabled={busy !== null || !samples.sampleUrl || !aiConfigured} onClick={makeAll}>
+                {view === 'use' ? 'Make all missing' : `Make all missing ${MODELS[view].label}`}
               </button>
               {staleList.length > 0 && (
                 <button className="btn btn-secondary" disabled={busy !== null || !aiConfigured} onClick={remakeStale}>

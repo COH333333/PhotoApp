@@ -2,7 +2,9 @@
 // guests at every event as the preview for that style. Host-only.
 //
 //   POST multipart { photo }      set the sample photo (clears old renders)
-//   POST json { presetId }        render one style from the sample
+//   POST json { presetId, tier }  render one style from the sample on that
+//                                 model ('full' | 'lite'; default: the style's
+//                                 current model). Both versions are kept.
 //   DELETE                        remove the photo and every render
 import { put, del } from '@vercel/blob';
 import { nanoid } from 'nanoid';
@@ -11,6 +13,8 @@ import { getGlobalSamples, setGlobalSamples, getPromptOverrides, getPresetModels
 import { parseMultipart } from '../../../lib/parseForm';
 import { PRESETS, promptFor, promptFingerprint, defaultPromptTemplate, tierFor } from '../../../lib/presets';
 import { runEdit, isAiConfigured } from '../../../lib/fal';
+import { isTier } from '../../../lib/models';
+import { withVersions, syncPreview, allSampleUrls } from '../../../lib/samples';
 
 export const config = { api: { bodyParser: false }, maxDuration: 90 };
 
@@ -31,20 +35,21 @@ async function fetchBuffer(url) {
 }
 
 async function removeAll(samples) {
-  const urls = [samples.sampleUrl, ...Object.values(samples.previews || {})].filter(Boolean);
-  await Promise.all(urls.map((u) => del(u).catch(() => {})));
+  await Promise.all(allSampleUrls(samples).map((u) => del(u).catch(() => {})));
 }
+
+const EMPTY = { sampleUrl: null, previews: {}, madeWith: {}, madeWithModel: {}, versions: { full: {}, lite: {} } };
 
 export default async function handler(req, res) {
   if (!isAdminRequest(req)) return res.status(401).json({ error: 'Not signed in' });
-  const samples = await getGlobalSamples();
+  const samples = withVersions(await getGlobalSamples());
 
   if (req.method === 'GET') return res.status(200).json(samples);
 
   if (req.method === 'DELETE') {
     await removeAll(samples);
-    await setGlobalSamples({ sampleUrl: null, previews: {} });
-    return res.status(200).json({ sampleUrl: null, previews: {} });
+    await setGlobalSamples(EMPTY);
+    return res.status(200).json(EMPTY);
   }
 
   if (req.method !== 'POST') return res.status(405).end();
@@ -61,13 +66,13 @@ export default async function handler(req, res) {
     if (!file) return res.status(400).json({ error: 'No file uploaded' });
     await removeAll(samples);
     const blob = await put(`samples/source-${nanoid(6)}.jpg`, file.buffer, { access: 'public', contentType: 'image/jpeg' });
-    const next = { sampleUrl: blob.url, previews: {}, madeWith: {}, madeWithModel: {} };
+    const next = { ...EMPTY, sampleUrl: blob.url };
     await setGlobalSamples(next);
     return res.status(201).json(next);
   }
 
   if (!isAiConfigured()) return res.status(503).json({ error: 'AI is not set up yet.' });
-  const { presetId } = await readJson(req);
+  const { presetId, tier: askedTier } = await readJson(req);
   const preset = PRESETS[presetId];
   if (!preset || preset.needs.length !== 0) return res.status(400).json({ error: 'That preset has no preview.' });
   if (!samples.sampleUrl) return res.status(400).json({ error: 'Upload a sample photo first.' });
@@ -75,23 +80,25 @@ export default async function handler(req, res) {
   try {
     const overrides = await getPromptOverrides();
     const prompt = promptFor(presetId, { subject: 'the couple', keepsakeText: 'Sample Event · Jan 1, 2026' }, overrides);
-    const tier = tierFor(presetId, await getPresetModels());
+    const current = tierFor(presetId, await getPresetModels());
+    const tier = isTier(askedTier) ? askedTier : current;
     const result = await runEdit({ prompt, imageUrls: [samples.sampleUrl], tier });
     const blob = await put(`samples/${presetId}-${nanoid(6)}.jpg`, await fetchBuffer(result.url), {
       access: 'public',
       contentType: 'image/jpeg',
     });
-    const previews = { ...(samples.previews || {}) };
-    if (previews[presetId]) await del(previews[presetId]).catch(() => {});
-    previews[presetId] = blob.url;
+    // Replace only this model's version; the other one is kept for comparing.
+    const old = samples.versions[tier][presetId];
+    if (old?.url) await del(old.url).catch(() => {});
     // Remember which prompt made this sample, so an edited prompt shows as
     // out of date in the library.
     const template = overrides[presetId] || defaultPromptTemplate(presetId);
-    const madeWith = { ...(samples.madeWith || {}), [presetId]: promptFingerprint(template) };
-    // And which model, so a sample made on Full shows as out of date after
-    // the style is switched to Lite.
-    const madeWithModel = { ...(samples.madeWithModel || {}), [presetId]: tier };
-    const next = { ...samples, previews, madeWith, madeWithModel };
+    const versions = {
+      ...samples.versions,
+      [tier]: { ...samples.versions[tier], [presetId]: { url: blob.url, madeWith: promptFingerprint(template) } },
+    };
+    // Guests see the version for the model the style runs on.
+    const next = syncPreview({ ...samples, versions }, presetId, current);
     await setGlobalSamples(next);
     return res.status(200).json(next);
   } catch (err) {
