@@ -1,8 +1,9 @@
 // Every style and its prompt as an Excel workbook. Host-only.
 import ExcelJS from 'exceljs';
 import { isAdminRequest } from '../../../lib/auth';
-import { getHiddenPresets, getPromptOverrides, getGlobalSamples } from '../../../lib/store';
+import { getHiddenPresets, getPromptOverrides, getGlobalSamples, getPresetModels } from '../../../lib/store';
 import { PRESETS, presetSummaries, defaultPromptTemplate } from '../../../lib/presets';
+import { MODELS } from '../../../lib/models';
 
 function needsLabel(needs) {
   if (needs.includes('backdrop')) return "Guest's photo + a portrait to pose with";
@@ -15,10 +16,11 @@ export default async function handler(req, res) {
   if (!isAdminRequest(req)) return res.status(401).json({ error: 'Not signed in' });
   if (req.method !== 'GET') return res.status(405).end();
 
-  const [hidden, overrides, samples] = await Promise.all([
+  const [hidden, overrides, samples, chosen] = await Promise.all([
     getHiddenPresets(),
     getPromptOverrides(),
     getGlobalSamples(),
+    getPresetModels(),
   ]);
 
   const wb = new ExcelJS.Workbook();
@@ -31,6 +33,8 @@ export default async function handler(req, res) {
     { header: 'Description', key: 'blurb', width: 30 },
     { header: 'Status', key: 'status', width: 11 },
     { header: 'Uses', key: 'uses', width: 22 },
+    { header: 'AI model', key: 'model', width: 20 },
+    { header: '~Cost per edit', key: 'cost', width: 14 },
     { header: 'Prompt in use', key: 'prompt', width: 90 },
     { header: 'Edited?', key: 'edited', width: 9 },
     { header: 'Built-in prompt (if edited)', key: 'builtIn', width: 90 },
@@ -38,7 +42,7 @@ export default async function handler(req, res) {
     { header: 'Style ID', key: 'id', width: 18 },
   ];
 
-  for (const p of presetSummaries({})) {
+  for (const p of presetSummaries({}, [], chosen)) {
     const builtIn = defaultPromptTemplate(p.id);
     const edited = Boolean(overrides[p.id]);
     const sampleUrl = samples.previews?.[p.id] || null;
@@ -47,6 +51,8 @@ export default async function handler(req, res) {
       blurb: p.blurb,
       status: hidden.includes(p.id) ? 'Removed' : 'In app',
       uses: needsLabel(PRESETS[p.id].needs),
+      model: MODELS[p.tier].name,
+      cost: p.cost,
       prompt: edited ? overrides[p.id] : builtIn,
       edited: edited ? 'Yes' : 'No',
       builtIn: edited ? builtIn : '',
@@ -67,7 +73,8 @@ export default async function handler(req, res) {
     if (link.value && link.value.hyperlink) link.font = { color: { argb: 'FF1F5FBF' }, underline: true };
     if (row.getCell('status').value === 'Removed') row.font = { color: { argb: 'FF888888' } };
   });
-  ws.autoFilter = { from: 'A1', to: 'I1' };
+  ws.getColumn('cost').numFmt = '$0.000';
+  ws.autoFilter = { from: 'A1', to: 'K1' };
 
   const notes = wb.addWorksheet('Read me');
   notes.columns = [{ width: 110 }];

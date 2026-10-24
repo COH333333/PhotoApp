@@ -7,9 +7,9 @@
 import { put, del } from '@vercel/blob';
 import { nanoid } from 'nanoid';
 import { isAdminRequest } from '../../../lib/auth';
-import { getGlobalSamples, setGlobalSamples, getPromptOverrides } from '../../../lib/store';
+import { getGlobalSamples, setGlobalSamples, getPromptOverrides, getPresetModels } from '../../../lib/store';
 import { parseMultipart } from '../../../lib/parseForm';
-import { PRESETS, promptFor, promptFingerprint, defaultPromptTemplate } from '../../../lib/presets';
+import { PRESETS, promptFor, promptFingerprint, defaultPromptTemplate, tierFor } from '../../../lib/presets';
 import { runEdit, isAiConfigured } from '../../../lib/fal';
 
 export const config = { api: { bodyParser: false }, maxDuration: 90 };
@@ -61,7 +61,7 @@ export default async function handler(req, res) {
     if (!file) return res.status(400).json({ error: 'No file uploaded' });
     await removeAll(samples);
     const blob = await put(`samples/source-${nanoid(6)}.jpg`, file.buffer, { access: 'public', contentType: 'image/jpeg' });
-    const next = { sampleUrl: blob.url, previews: {}, madeWith: {} };
+    const next = { sampleUrl: blob.url, previews: {}, madeWith: {}, madeWithModel: {} };
     await setGlobalSamples(next);
     return res.status(201).json(next);
   }
@@ -75,7 +75,8 @@ export default async function handler(req, res) {
   try {
     const overrides = await getPromptOverrides();
     const prompt = promptFor(presetId, { subject: 'the couple', keepsakeText: 'Sample Event · Jan 1, 2026' }, overrides);
-    const result = await runEdit({ prompt, imageUrls: [samples.sampleUrl], model: preset.model });
+    const tier = tierFor(presetId, await getPresetModels());
+    const result = await runEdit({ prompt, imageUrls: [samples.sampleUrl], tier });
     const blob = await put(`samples/${presetId}-${nanoid(6)}.jpg`, await fetchBuffer(result.url), {
       access: 'public',
       contentType: 'image/jpeg',
@@ -87,7 +88,10 @@ export default async function handler(req, res) {
     // out of date in the library.
     const template = overrides[presetId] || defaultPromptTemplate(presetId);
     const madeWith = { ...(samples.madeWith || {}), [presetId]: promptFingerprint(template) };
-    const next = { ...samples, previews, madeWith };
+    // And which model, so a sample made on Full shows as out of date after
+    // the style is switched to Lite.
+    const madeWithModel = { ...(samples.madeWithModel || {}), [presetId]: tier };
+    const next = { ...samples, previews, madeWith, madeWithModel };
     await setGlobalSamples(next);
     return res.status(200).json(next);
   } catch (err) {

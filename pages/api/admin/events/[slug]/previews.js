@@ -7,8 +7,8 @@
 import { put, del } from '@vercel/blob';
 import { nanoid } from 'nanoid';
 import { isAdminRequest } from '../../../../../lib/auth';
-import { getEvent, updateEvent, getPromptOverrides } from '../../../../../lib/store';
-import { PRESETS, keepsakeTextFor, promptFor } from '../../../../../lib/presets';
+import { getEvent, updateEvent, getPromptOverrides, getPresetModels } from '../../../../../lib/store';
+import { PRESETS, keepsakeTextFor, promptFor, tierFor } from '../../../../../lib/presets';
 import { subjectFor } from '../../../../../lib/templates';
 import { runEdit, isAiConfigured } from '../../../../../lib/fal';
 
@@ -60,7 +60,7 @@ export default async function handler(req, res) {
   try {
     const preset = PRESETS[presetId];
     const prompt = promptFor(presetId, { subject: subjectFor(event), keepsakeText: keepsakeTextFor(event) }, await getPromptOverrides());
-    const result = await runEdit({ prompt, imageUrls: [sampleUrl], model: preset.model });
+    const result = await runEdit({ prompt, imageUrls: [sampleUrl], tier: tierFor(presetId, await getPresetModels()) });
     const blob = await put(`previews/${slug}/${presetId}-${nanoid(6)}.jpg`, await fetchBuffer(result.url), {
       access: 'public',
       contentType: 'image/jpeg',

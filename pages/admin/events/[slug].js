@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import Head from 'next/head';
 import Link from 'next/link';
 import { isAdminRequest } from '../../../lib/auth';
-import { getEvent, listAllPhotos, getAiUsage, getHiddenPresets, getGlobalSamples } from '../../../lib/store';
+import { getEvent, listAllPhotos, getAiUsage, getHiddenPresets, getGlobalSamples, getPresetModels } from '../../../lib/store';
 // Deliberately NOT importing PRESETS or maxCostFor here: referencing them in
 // the rendered component pulls lib/presets into the client bundle, prompts and
 // all, and that bundle is fetchable by any guest. Everything this page needs
@@ -41,7 +41,7 @@ export async function getServerSideProps({ req, params }) {
   const albumUrl = albumLink(origin, event);
   const wallUrl = wallLink(origin, event);
 
-  const allPresets = presetSummaries(event, await getHiddenPresets());
+  const allPresets = presetSummaries(event, await getHiddenPresets(), await getPresetModels());
 
   return {
     props: {
@@ -357,7 +357,7 @@ export default function AdminEventDetail({
   const poseLockedCost = (allPresets.find((p) => p.id === 'pose-with-us') || {}).lockedCost;
   const liveCost = allPresets
     .filter((p) => enabled.includes(p.id))
-    .reduce((max, p) => Math.max(max, lockCouple && p.lockedCost ? p.lockedCost : p.cost), defaultCost);
+    .reduce((max, p) => Math.max(max, lockCouple && p.lockedCost ? p.lockedCost : p.cost), 0) || defaultCost;
   const maxCost = (Number(perEvent) || 0) * liveCost;
 
   return (
@@ -616,6 +616,7 @@ export default function AdminEventDetail({
                     <input type="checkbox" checked={enabled.includes(p.id)} onChange={() => togglePreset(p.id)} />
                     <span>
                       <strong>{p.label}</strong> <span className="muted">{p.blurb}</span>
+                      <span className="tiny-tag">{p.tier === 'lite' ? 'Lite' : 'Full'} · ${p.cost.toFixed(2)}</span>
                       {p.needsReferences && references.length === 0 && enabled.includes(p.id) && (
                         <span className="muted" style={{ display: 'block', fontSize: 12.5 }}>
                           Hidden from guests until you add reference photos.
@@ -678,8 +679,9 @@ export default function AdminEventDetail({
                 </div>
               </div>
               <p className="muted" style={{ marginTop: 0 }}>
-                Most this event can cost: about ${maxCost.toFixed(2)}, using the priciest edit
-                you have switched on at ${liveCost.toFixed(2)} each. Simpler edits cost ${defaultCost.toFixed(2)}.
+                Most this event can cost: about ${maxCost.toFixed(2)}, if every edit used the priciest
+                one you have switched on (${liveCost.toFixed(2)} each). Styles on Lite cost about $0.03;
+                choose Full or Lite per style in the Style library.
               </p>
 
               <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>

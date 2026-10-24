@@ -134,6 +134,7 @@ export default async function handler(req, res) {
     challengeId: challenge ? challenge.id : null,
     aiPreset: edit?.preset || null,
     aiLabel: edit?.label || null,
+    aiModel: edit?.model || null,
     // With approval on, a photo waits in the host's queue before it shows.
     status: event.approvalMode === true ? 'pending' : 'approved',
     driveFileId: null,

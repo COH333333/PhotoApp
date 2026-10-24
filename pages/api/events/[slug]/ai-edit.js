@@ -1,6 +1,6 @@
 import { nanoid } from 'nanoid';
 import { put } from '@vercel/blob';
-import { getEvent, reserveAiEdit, releaseAiEdit, saveEdit, getAiUsage, getHiddenPresets, getPromptOverrides } from '../../../../lib/store';
+import { getEvent, reserveAiEdit, releaseAiEdit, saveEdit, getAiUsage, getHiddenPresets, getPromptOverrides, getPresetModels } from '../../../../lib/store';
 import { parseMultipart } from '../../../../lib/parseForm';
 import { readGuestId } from '../../../../lib/guest';
 import { requireAccess } from '../../../../lib/access';
@@ -11,6 +11,7 @@ import {
   keepsakeTextFor,
   presetLabel,
   promptFor,
+  tierFor,
 } from '../../../../lib/presets';
 import { subjectFor } from '../../../../lib/templates';
 import { runEdit, isAiConfigured } from '../../../../lib/fal';
@@ -117,6 +118,7 @@ export default async function handler(req, res) {
   const startedAt = Date.now();
   let result;
   let pasteBackApplied = false;
+  let tier = 'full';
   try {
     // Images go to the AI inline and aren't stored here. A selfie in
     // particular only exists for the length of this request.
@@ -155,10 +157,12 @@ export default async function handler(req, res) {
       throw new Error(`Prompt for ${presetId} is malformed`);
     }
 
+    // The padded "lock" path asks for a 2K result, which only Full offers.
+    tier = pad ? 'full' : tierFor(presetId, await getPresetModels());
     result = await runEdit({
       prompt,
       imageUrls,
-      model: preset.model,
+      tier,
       resolution: pad ? preset.lockedResolution : undefined,
       timeoutMs: pad ? LOCKED_GEN_BUDGET_MS : undefined,
     });
@@ -203,6 +207,7 @@ export default async function handler(req, res) {
     guestId,
     preset: presetId,
     label: presetLabel(presetId, event),
+    model: tier,
     resultUrl: result.url,
     // True only when the couple's own pixels were composited back. False means
     // the model's version of them is what the guest is looking at.

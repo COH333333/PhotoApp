@@ -1039,3 +1039,49 @@ textarea:focus-visible {
   min-width: 52px;
   font-variant-numeric: tabular-nums;
 }
+
+/* Full / Lite model switch */
+.model-switch {
+  display: inline-flex;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 999px;
+  overflow: hidden;
+  margin-top: 4px;
+}
+
+.model-switch button {
+  border: 0;
+  background: transparent;
+  color: rgba(245, 245, 242, 0.75);
+  font-family: inherit;
+  font-size: 12px;
+  padding: 3px 10px;
+  cursor: pointer;
+}
+
+.model-switch.is-compact button {
+  font-size: 11px;
+  padding: 2px 8px;
+}
+
+.model-switch button.is-on {
+  background: var(--event-accent, #e2a73b);
+  color: #14181c;
+  font-weight: 600;
+}
+
+.model-switch button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.model-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 18px;
+  padding: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 6px;
+  font-size: 13.5px;
+}

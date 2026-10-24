@@ -2,8 +2,9 @@ import { useState } from 'react';
 import Head from 'next/head';
 import Link from 'next/link';
 import ImageViewer from '../../components/ImageViewer';
+import { MODELS } from '../../lib/models';
 import { isAdminRequest } from '../../lib/auth';
-import { getGlobalSamples, getHiddenPresets, getPromptOverrides } from '../../lib/store';
+import { getGlobalSamples, getHiddenPresets, getPromptOverrides, getPresetModels } from '../../lib/store';
 import { presetSummaries, DEFAULT_COST, defaultPromptTemplate } from '../../lib/presets';
 import { isAiConfigured } from '../../lib/fal';
 import { preparePhoto } from '../../lib/heicConvert';
@@ -14,12 +15,15 @@ export async function getServerSideProps({ req }) {
   if (!isAdminRequest(req)) return { redirect: { destination: '/admin/login', permanent: false } };
   const samples = await getGlobalSamples();
   // Prompts are sent only to this signed-in page, never to guests.
-  const all = presetSummaries({}).map((p) => ({
+  const chosen = await getPresetModels();
+  const all = presetSummaries({}, [], chosen).map((p) => ({
     id: p.id,
     label: p.label,
     blurb: p.blurb,
     previewable: p.previewable,
     defaultPrompt: defaultPromptTemplate(p.id),
+    tier: p.tier,
+    defaultTier: p.defaultTier,
   }));
   const overrides = await getPromptOverrides();
   return {
@@ -38,6 +42,27 @@ function fingerprint(text) {
   let h = 0;
   for (let i = 0; i < text.length; i++) h = (Math.imul(31, h) + text.charCodeAt(i)) | 0;
   return (h >>> 0).toString(36);
+}
+
+// Full / Lite switch for one style.
+function ModelSwitch({ value, onChange, disabled, compact = false }) {
+  return (
+    <span className={`model-switch${compact ? ' is-compact' : ''}`} role="group" aria-label="AI model">
+      {Object.entries(MODELS).map(([tier, m]) => (
+        <button
+          key={tier}
+          type="button"
+          className={value === tier ? 'is-on' : ''}
+          aria-pressed={value === tier}
+          disabled={disabled}
+          title={`${m.name} · about $${m.cost.toFixed(3).replace(/0$/, '')} an edit`}
+          onClick={() => value !== tier && onChange(tier)}
+        >
+          {m.label}
+        </button>
+      ))}
+    </span>
+  );
 }
 
 function PromptEditor({ style, override, onSave, onClose }) {
@@ -116,6 +141,7 @@ export default function SamplesPage({ samples: initial, all, initialHidden, init
     'royal-court', 'red-carpet', 'hoi-an', 'year-2085', 'throwback-1985',
   ];
   function isStale(id) {
+    if (modelStale(id)) return true;
     const made = samples.madeWith?.[id];
     if (!samples.previews?.[id] || made === undefined) return false;
     if (made === 'default') return !overrides[id] ? REWRITTEN.includes(id) : true;
@@ -126,6 +152,31 @@ export default function SamplesPage({ samples: initial, all, initialHidden, init
 
   const [samples, setSamples] = useState(initial);
   const [hidden, setHidden] = useState(initialHidden);
+  const [tiers, setTiers] = useState(() => Object.fromEntries(all.map((p) => [p.id, p.tier])));
+  const [modelState, setModelState] = useState('');
+
+  async function setTier(ids, tier) {
+    setModelState('Saving…');
+    const res = await fetch('/api/admin/models', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ids, tier }),
+    });
+    if (res.ok) {
+      setTiers((await res.json()).tiers);
+      setModelState(`Saved. Takes effect on the next edit at every event.`);
+    } else {
+      setModelState('Could not save. Try again.');
+    }
+  }
+
+  // Samples made before models were tracked were all made on Full.
+  function sampleModel(id) {
+    return samples.madeWithModel?.[id] || 'full';
+  }
+  function modelStale(id) {
+    return Boolean(samples.previews?.[id]) && sampleModel(id) !== tiers[id];
+  }
   const styles = all.filter((p) => p.previewable && !hidden.includes(p.id));
   const removed = all.filter((p) => hidden.includes(p.id));
 
@@ -180,6 +231,19 @@ export default function SamplesPage({ samples: initial, all, initialHidden, init
     } finally {
       setBusy(null);
     }
+  }
+
+  const staleList = styles.filter((p) => isStale(p.id));
+  const staleCost = staleList.reduce((sum, p) => sum + MODELS[tiers[p.id]].cost, 0);
+
+  async function remakeStale() {
+    setLog('');
+    const todo = [...staleList];
+    for (const p of todo) {
+      setLog(`Remaking ${p.label} on ${MODELS[tiers[p.id]].label}…`);
+      if (!(await make(p.id))) return;
+    }
+    setLog('Done.');
   }
 
   async function makeAll(onlyMissing) {
@@ -252,7 +316,12 @@ export default function SamplesPage({ samples: initial, all, initialHidden, init
   const [viewing, setViewing] = useState(null);
   const viewerItems = styles
     .filter((p) => samples.previews?.[p.id])
-    .map((p) => ({ id: p.id, url: samples.previews[p.id], title: p.label, subtitle: p.blurb }));
+    .map((p) => ({
+      id: p.id,
+      url: samples.previews[p.id],
+      title: p.label,
+      subtitle: `${p.blurb} · made on ${MODELS[sampleModel(p.id)].label}`,
+    }));
   function openViewer(id) {
     const i = viewerItems.findIndex((x) => x.id === id);
     if (i >= 0) setViewing(i);
@@ -311,7 +380,12 @@ export default function SamplesPage({ samples: initial, all, initialHidden, init
           <div className="card">
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', flexWrap: 'wrap', gap: 8 }}>
               <h2 className="display" style={{ fontSize: 16, margin: 0 }}>Samples ({made}/{styles.length})</h2>
-              <span className="muted">{missing ? `${missing} to make · about $${(missing * cost).toFixed(2)}` : 'Complete'}</span>
+              <span className="muted">{missing
+                  ? `${missing} to make · about $${styles
+                      .filter((p) => !samples.previews?.[p.id])
+                      .reduce((sum, p) => sum + MODELS[tiers[p.id]].cost, 0)
+                      .toFixed(2)}`
+                  : 'Complete'}</span>
             </div>
             {!aiConfigured && <p className="notice-dark">AI isn't set up yet (FAL_KEY missing).</p>}
             <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', margin: '14px 0' }}>
@@ -334,8 +408,13 @@ export default function SamplesPage({ samples: initial, all, initialHidden, init
                   <span className="muted" style={{ fontSize: 12, display: 'block', marginTop: 4 }}>
                     {p.label}
                     {overrides[p.id] && <span className="tiny-tag">edited</span>}
-                    {isStale(p.id) && <span className="tiny-tag is-warn">sample out of date</span>}
+                    {isStale(p.id) && (
+                      <span className="tiny-tag is-warn">
+                        {modelStale(p.id) ? `sample made on ${MODELS[sampleModel(p.id)].label}` : 'sample out of date'}
+                      </span>
+                    )}
                   </span>
+                  <ModelSwitch value={tiers[p.id]} onChange={(t) => setTier([p.id], t)} disabled={busy !== null} compact />
                   <div style={{ display: 'flex', justifyContent: 'center', gap: 8, flexWrap: 'wrap' }}>
                     <button
                       className="muted"
@@ -364,7 +443,48 @@ export default function SamplesPage({ samples: initial, all, initialHidden, init
               <button className="btn btn-primary" disabled={busy !== null || !samples.sampleUrl || !aiConfigured} onClick={() => makeAll(true)}>
                 Make all missing
               </button>
+              {staleList.length > 0 && (
+                <button className="btn btn-secondary" disabled={busy !== null || !aiConfigured} onClick={remakeStale}>
+                  Remake out of date ({staleList.length}) · about ${staleCost.toFixed(2)}
+                </button>
+              )}
               {log && <span className="muted" role="status">{log}</span>}
+            </div>
+
+            <div className="model-panel">
+              <div>
+                <strong>AI model per style.</strong>{' '}
+                <span className="muted">
+                  Full ({MODELS.full.name}, about ${MODELS.full.cost.toFixed(2)} an edit) keeps faces most exactly.
+                  Lite ({MODELS.lite.name}, about ${MODELS.lite.cost.toFixed(3).replace(/0$/, '')}) is cheaper and faster.
+                  The switch under each style sets which one guests' edits use, at every event.
+                </span>
+              </div>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+                <button className="btn btn-secondary" style={{ padding: '6px 12px', fontSize: 13 }} onClick={() => setTier(styles.map((p) => p.id), 'lite')}>
+                  All looks → Lite
+                </button>
+                <button className="btn btn-secondary" style={{ padding: '6px 12px', fontSize: 13 }} onClick={() => setTier(styles.map((p) => p.id), 'full')}>
+                  All looks → Full
+                </button>
+                <button
+                  className="btn btn-secondary"
+                  style={{ padding: '6px 12px', fontSize: 13 }}
+                  onClick={async () => {
+                    const groups = { full: [], lite: [] };
+                    for (const p of all) groups[p.defaultTier].push(p.id);
+                    await setTier(groups.full, 'full');
+                    await setTier(groups.lite, 'lite');
+                  }}
+                >
+                  Recommended
+                </button>
+                <span className="muted" style={{ fontSize: 12.5 }}>
+                  {Object.values(tiers).filter((t) => t === 'lite').length} on Lite ·{' '}
+                  {Object.values(tiers).filter((t) => t === 'full').length} on Full
+                </span>
+                {modelState && <span className="muted" role="status" style={{ fontSize: 12.5 }}>{modelState}</span>}
+              </div>
             </div>
 
             <h3 className="display" style={{ fontSize: 14, margin: '28px 0 8px' }}>Other edits</h3>
@@ -375,7 +495,8 @@ export default function SamplesPage({ samples: initial, all, initialHidden, init
                   <strong>{p.label}</strong> <span className="muted">{p.blurb}</span>
                   {overrides[p.id] && <span className="tiny-tag">edited</span>}
                 </span>
-                <span style={{ display: 'flex', gap: 6 }}>
+                <span style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                  <ModelSwitch value={tiers[p.id]} onChange={(t) => setTier([p.id], t)} />
                   <button className="btn btn-secondary" style={{ padding: '4px 10px', fontSize: 12 }} onClick={() => setEditing(p)}>Prompt</button>
                   <button className="btn btn-secondary" style={{ padding: '4px 10px', fontSize: 12 }} onClick={() => setStyleHidden(p.id, true)}>Remove</button>
                 </span>
