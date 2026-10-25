@@ -452,7 +452,7 @@ export default function AdminEventDetail({
 
         <div className="admin-grid">
           <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
-            <QRCodeCard url={guestUrl} albumUrl={albumUrl} signageHref={`/admin/events/${event.slug}/signage`} wallUrl={wallUrl} />
+            <QRCodeCard url={guestUrl} eventName={event.name} albumUrl={albumUrl} signageHref={`/admin/events/${event.slug}/signage`} wallUrl={wallUrl} />
 
             <DriveCard
               slug={event.slug}
