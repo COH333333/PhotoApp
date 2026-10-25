@@ -51,6 +51,12 @@ function Gallery({ event, canUpload, initialPhotos, initialHasMore }) {
           linkLabel="Add a photo"
         />
         {!canUpload && <p className="muted" style={{ marginTop: -8, fontSize: 13 }}>Uploads have closed. Tap any photo to save or share it.</p>}
+        {event.driveUrl && (
+          <a className="drive-banner" href={event.driveUrl} target="_blank" rel="noreferrer">
+            <span className="drive-banner-title">Full-size photos in Google Drive</span>
+            <span className="drive-banner-sub">Open the shared folder to download one photo or the whole album</span>
+          </a>
+        )}
         {hasChallenges && (
           <div className="filter-row" role="tablist" aria-label="Filter by challenge">
             <button className={`filter-chip${challenge === null ? ' is-active' : ''}`} onClick={() => setChallenge(null)}>All</button>

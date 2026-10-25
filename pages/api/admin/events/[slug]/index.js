@@ -1,4 +1,6 @@
 import { nanoid } from 'nanoid';
+import { setFolderLinkSharing, renameDriveFile, eventFolderName } from '../../../../../lib/drive';
+import { driveReady } from '../../../../../lib/driveArchive';
 import { isAdminRequest } from '../../../../../lib/auth';
 import { getEvent, updateEvent, listAllPhotos } from '../../../../../lib/store';
 import { PRESETS } from '../../../../../lib/presets';
@@ -71,7 +73,27 @@ export default async function handler(req, res) {
     if (body.keepsakeText !== undefined) {
       patch.keepsakeText = String(body.keepsakeText).slice(0, 80);
     }
+    if (body.driveShare !== undefined) patch.driveShare = Boolean(body.driveShare);
+    const before = await getEvent(slug);
     const event = await updateEvent(slug, patch);
+
+    // Keep the Drive folder in step: sharing on/off, and the folder name
+    // when the event's name or date changes.
+    let driveNote = null;
+    if (event.driveFolderId && (await driveReady())) {
+      try {
+        if (body.driveShare !== undefined && Boolean(before?.driveShare !== false) !== patch.driveShare) {
+          await setFolderLinkSharing(event.driveFolderId, patch.driveShare);
+        }
+        if (before && (before.name !== event.name || before.date !== event.date)) {
+          await renameDriveFile(event.driveFolderId, eventFolderName(event));
+        }
+      } catch (err) {
+        console.error('Drive folder update failed:', err.message);
+        driveNote = "Saved, but the Google Drive folder didn't update.";
+      }
+    }
+    if (driveNote) return res.status(200).json({ event, driveNote });
     return res.status(200).json({ event });
   }
 

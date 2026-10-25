@@ -16,7 +16,7 @@ import { makeThumbnail, makeMedium } from '../../../../lib/thumbnail';
 import { readGuestId } from '../../../../lib/guest';
 import { requireAccess } from '../../../../lib/access';
 import { uploadsOpen } from '../../../../lib/eventState';
-import { ensureEventFolder, uploadPhotoToDrive, isDriveConnected } from '../../../../lib/drive';
+import { driveReady, archivePhoto, withTimeout } from '../../../../lib/driveArchive';
 import { refreshProcessingVideos } from '../../../../lib/videoRefresh';
 
 export const config = { api: { bodyParser: false }, maxDuration: 60 };
@@ -29,50 +29,6 @@ async function fetchBuffer(url) {
   const res = await fetch(url);
   if (!res.ok) throw new Error(`Could not download edited image (${res.status})`);
   return Buffer.from(await res.arrayBuffer());
-}
-
-async function driveFolderFor(event) {
-  if (event.driveFolderId) return event.driveFolderId;
-  const lockName = `drivefolder:${event.slug}`;
-  for (let attempt = 0; attempt < 10; attempt++) {
-    if (await acquireLock(lockName)) {
-      try {
-        const fresh = await getEvent(event.slug);
-        if (fresh?.driveFolderId) return fresh.driveFolderId;
-        const folderId = await ensureEventFolder(event.name);
-        await updateEvent(event.slug, { driveFolderId: folderId });
-        return folderId;
-      } finally {
-        await releaseLock(lockName);
-      }
-    }
-    // Someone else is creating it; wait and re-check.
-    await new Promise((r) => setTimeout(r, 1000));
-    const fresh = await getEvent(event.slug);
-    if (fresh?.driveFolderId) return fresh.driveFolderId;
-  }
-  throw new Error('Timed out waiting for the Drive folder');
-}
-
-async function archiveToDrive(event, files) {
-  if (!(await isDriveConnected())) return { status: 'pending' };
-  const folderId = await driveFolderFor(event);
-  let first = null;
-  for (const f of files) {
-    const driveFile = await uploadPhotoToDrive({ folderId, ...f });
-    if (!first) first = driveFile;
-  }
-  return { status: 'synced', driveFileId: first.id, driveViewUrl: first.webViewLink };
-}
-
-function withTimeout(promise, ms) {
-  let timer;
-  return Promise.race([
-    promise,
-    new Promise((_, reject) => {
-      timer = setTimeout(() => reject(new Error('Drive upload took too long')), ms);
-    }),
-  ]).finally(() => clearTimeout(timer));
 }
 
 export default async function handler(req, res) {
@@ -141,7 +97,8 @@ export default async function handler(req, res) {
     driveViewUrl: null,
     syncStatus: 'pending',
   };
-  const driveFiles = [];
+  // Kept in memory so Drive doesn't have to download them again.
+  const buffers = { original: original.buffer, display: null };
 
   try {
     const originalBlob = await put(`photos/${slug}/${id}-original.jpg`, original.buffer, {
@@ -163,15 +120,10 @@ export default async function handler(req, res) {
       photo.url = editedBlob.url;
       photo.originalUrl = originalBlob.url;
       displayBuffer = editedBuffer;
-      driveFiles.push({ filename: `${id} - ${edit.label}.jpg`, mimeType: 'image/jpeg', buffer: editedBuffer });
+      buffers.display = editedBuffer;
     } else {
       photo.url = originalBlob.url;
     }
-    driveFiles.push({
-      filename: edit ? `${id} - original.jpg` : `${id}.jpg`,
-      mimeType: 'image/jpeg',
-      buffer: original.buffer,
-    });
 
     // Best effort. Without them the gallery just loads the full photo.
     const [thumb, medium] = await Promise.all([makeThumbnail(displayBuffer), makeMedium(displayBuffer)]);
@@ -201,14 +153,17 @@ export default async function handler(req, res) {
     });
   }
 
-  try {
-    const drive = await withTimeout(archiveToDrive(event, driveFiles), DRIVE_BUDGET_MS);
-    photo.syncStatus = drive.status;
-    photo.driveFileId = drive.driveFileId || null;
-    photo.driveViewUrl = drive.driveViewUrl || null;
-  } catch (err) {
-    console.error('Drive upload failed for photo', id, err.message);
-    photo.syncStatus = 'failed';
+  // Only photos that are visible in the album go to Drive (the folder may be
+  // shared). One waiting for approval is copied when the host approves it.
+  if (photo.status !== 'approved') {
+    photo.syncStatus = 'waiting';
+  } else if (await driveReady()) {
+    try {
+      Object.assign(photo, await withTimeout(archivePhoto(event, photo, buffers), DRIVE_BUDGET_MS));
+    } catch (err) {
+      console.error('Drive upload failed for photo', id, err.message);
+      photo.syncStatus = 'failed';
+    }
   }
 
   await addPhoto(slug, photo);

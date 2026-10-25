@@ -1,6 +1,6 @@
 import { isAdminRequest } from '../../../../lib/auth';
 import { listEvents, createEvent, getEvent } from '../../../../lib/store';
-import { ensureEventFolder, isDriveConnected } from '../../../../lib/drive';
+import { driveReady, eventFolder } from '../../../../lib/driveArchive';
 import { slugify } from '../../../../lib/slug';
 import { templateFor, TEMPLATES, DEFAULT_TEMPLATE } from '../../../../lib/templates';
 import { AI_DEFAULTS } from '../../../../lib/aiLimits';
@@ -25,17 +25,6 @@ export default async function handler(req, res) {
     const existing = await getEvent(slug);
     if (existing) slug = `${slug}-${nanoid(4).toLowerCase()}`;
 
-    let driveFolderId = null;
-    if (await isDriveConnected()) {
-      try {
-        driveFolderId = await ensureEventFolder(name);
-      } catch (err) {
-        // Event still gets created; folder can be linked later once Drive
-        // is connected from /admin/setup.
-        console.error('Drive folder creation failed:', err.message);
-      }
-    }
-
     const event = {
       slug,
       accessKey: newAccessKey(),
@@ -58,11 +47,24 @@ export default async function handler(req, res) {
       aiPerEvent: AI_DEFAULTS.perEvent,
       keepsakeText: '',
       uploadsMode: 'auto',
-      driveFolderId,
+      driveFolderId: null,
+      driveFolderUrl: null,
+      // Guests get a view-only link to the event's Drive folder.
+      driveShare: true,
       createdAt: new Date().toISOString(),
     };
 
     await createEvent(event);
+    // Make the event's Drive folder straight away when Drive is connected.
+    // If it fails, it's made on the first photo or from the dashboard.
+    if (await driveReady()) {
+      try {
+        const folder = await eventFolder(event);
+        Object.assign(event, { driveFolderId: folder.id, driveFolderUrl: folder.url });
+      } catch (err) {
+        console.error('Drive folder creation failed:', err.message);
+      }
+    }
     return res.status(201).json({ event });
   }
 

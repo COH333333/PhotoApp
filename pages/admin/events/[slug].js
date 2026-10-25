@@ -16,6 +16,9 @@ import {
 } from '../../../lib/presets';
 import { templateOptions, subjectFor } from '../../../lib/templates';
 import { isAiConfigured } from '../../../lib/fal';
+import DriveCard from '../../../components/DriveCard';
+import { driveReady, needsArchive } from '../../../lib/driveArchive';
+import { getConnectedEmail } from '../../../lib/drive';
 import { aiLimitsFor, videoLimitsFor } from '../../../lib/aiLimits';
 import { isStreamConfigured, MAX_VIDEO_SECONDS } from '../../../lib/stream';
 import { preparePhoto } from '../../../lib/heicConvert';
@@ -56,6 +59,17 @@ export async function getServerSideProps({ req, params }) {
       globalSamples: await getGlobalSamples(),
       subject: subjectFor(event),
       aiConfigured: isAiConfigured(),
+      drive: await (async () => {
+        const ready = await driveReady();
+        if (!ready) return { ready: false };
+        const email = await getConnectedEmail();
+        return {
+          ready: true,
+          url: event.driveFolderUrl || null,
+          shared: event.driveShare !== false,
+          remaining: photos.filter((p) => needsArchive(p, email)).length,
+        };
+      })(),
       videoConfigured: isStreamConfigured(),
       videoLimits: videoLimitsFor(event),
       maxVideoSeconds: MAX_VIDEO_SECONDS,
@@ -79,6 +93,7 @@ export default function AdminEventDetail({
   globalSamples,
   subject,
   aiConfigured,
+  drive,
   videoConfigured,
   videoLimits,
   maxVideoSeconds,
@@ -104,6 +119,7 @@ export default function AdminEventDetail({
   const [uploadsMode, setUploadsMode] = useState(uploads.mode);
   const [approvalMode, setApprovalMode] = useState(event.approvalMode === true);
   const [videosEnabled, setVideosEnabled] = useState(event.videosEnabled !== false);
+  const [driveShare, setDriveShare] = useState(event.driveShare !== false);
   const [type, setType] = useState(event.type || 'wedding');
   const [subjectText, setSubjectText] = useState(event.subject || subject);
   const [welcome, setWelcome] = useState(event.welcome || '');
@@ -250,9 +266,13 @@ export default function AdminEventDetail({
           name, date, uploadsMode, approvalMode, type, subject: subjectText, welcome, hashtag, primaryColor, accentColor,
           challenges: challengesFromText(),
           videosEnabled,
+          driveShare,
         }),
       });
-      setSettingsState(res.ok ? 'Saved. Reload to see updated edit names.' : 'Could not save. Try again.');
+      const data = await res.json().catch(() => ({}));
+      setSettingsState(
+        !res.ok ? 'Could not save. Try again.' : data.driveNote || 'Saved. Reload to see updated edit names.'
+      );
     } catch {
       setSettingsState('Could not save. Check your connection.');
     }
@@ -375,6 +395,14 @@ export default function AdminEventDetail({
           <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
             <QRCodeCard url={guestUrl} albumUrl={albumUrl} signageHref={`/admin/events/${event.slug}/signage`} wallUrl={wallUrl} />
 
+            <DriveCard
+              slug={event.slug}
+              ready={drive.ready}
+              initialUrl={drive.url || null}
+              initialShared={drive.shared !== false}
+              initialRemaining={drive.remaining || 0}
+            />
+
             <form className="card" onSubmit={saveSettings}>
               <h2 className="display" style={{ fontSize: 16, marginTop: 0 }}>Event settings</h2>
               <div className="field">
@@ -496,6 +524,16 @@ export default function AdminEventDetail({
                   filtered by them. Leave empty to turn challenges off.
                 </span>
               </div>
+              <label className="check-row">
+                <input type="checkbox" checked={driveShare} onChange={() => { setDriveShare((v) => !v); setSettingsState(''); }} />
+                <span>
+                  <strong>Share the Google Drive folder with guests</strong>{' '}
+                  <span className="muted">
+                    View-only, for anyone with the link. Guests get an "Open in Google Drive" button on the
+                    album page for full-size photos and download-all.
+                  </span>
+                </span>
+              </label>
               <label className="check-row">
                 <input type="checkbox" checked={videosEnabled} onChange={() => { setVideosEnabled((v) => !v); setSettingsState(''); }} />
                 <span>
