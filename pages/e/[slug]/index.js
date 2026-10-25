@@ -3,6 +3,7 @@ import Head from 'next/head';
 import Link from 'next/link';
 import { getEvent, getAiUsage, getGlobalSamples, getHiddenPresets, getStyleCustom } from '../../../lib/store';
 import { publicPresets, publicBackdrops } from '../../../lib/presets';
+import StyleBrowser from '../../../components/StyleBrowser';
 import { isAiConfigured } from '../../../lib/fal';
 import { getOrCreateGuestId } from '../../../lib/guest';
 import { aiLimitsFor } from '../../../lib/aiLimits';
@@ -81,6 +82,7 @@ function CaptureFlow({ event, presets, backdrops, initialRemaining, videos }) {
   const [photo, setPhoto] = useState(null); // prepared JPEG Blob
   const [photoUrl, setPhotoUrl] = useState(null);
   const [preset, setPreset] = useState(null);
+  const [browsing, setBrowsing] = useState(null); // index of the style open in the browser
   const [edit, setEdit] = useState(null); // { editId, resultUrl, label }
   const [showOriginal, setShowOriginal] = useState(false);
   const [remaining, setRemaining] = useState(initialRemaining);
@@ -165,13 +167,14 @@ function CaptureFlow({ event, presets, backdrops, initialRemaining, videos }) {
     setStep('review');
   }
 
+  // Picked in the style browser, which already showed the example.
   function choosePreset(p) {
+    setBrowsing(null);
     setPreset(p);
     setMessage('');
     setBackdrop(null);
     if (p.needsBackdrop) setStep('backdrop');
     else if (p.needsSelfie) setStep('selfie');
-    else if (p.previewUrl) setStep('preview');
     else runEdit(p, null);
   }
 
@@ -279,22 +282,37 @@ function CaptureFlow({ event, presets, backdrops, initialRemaining, videos }) {
                   </span>
                 </div>
                 {message && <p className="notice" role="status">{message}</p>}
-                <div className="preset-grid">
-                  {presets.map((p) => (
+                <p className="muted" style={{ fontSize: 13, margin: '6px 0 0' }}>
+                  Tap a style to see it large, then swipe through the rest.
+                </p>
+                <div className="style-grid">
+                  {presets.map((p, i) => (
                     <button
                       key={p.id}
-                      className={`preset-chip${p.previewUrl ? ' has-preview' : ''}`}
-                      onClick={() => choosePreset(p)}
+                      className="style-tile"
+                      onClick={() => { setMessage(''); setBrowsing(i); }}
                       disabled={remaining <= 0}
                     >
-                      {p.previewUrl && <img src={p.previewUrl} alt="" className="preset-thumb" loading="lazy" />}
-                      <span className="preset-text">
-                        <span className="preset-label">{p.label}</span>
-                        <span className="preset-blurb">{p.blurb}</span>
-                      </span>
+                      {p.previewUrl ? (
+                        <img src={p.previewUrl} alt="" loading="lazy" />
+                      ) : (
+                        <span className="style-tile-blank">{p.blurb}</span>
+                      )}
+                      <span className="style-tile-label">{p.label}</span>
                     </button>
                   ))}
                 </div>
+                {browsing !== null && (
+                  <StyleBrowser
+                    styles={presets}
+                    startIndex={browsing}
+                    photoUrl={photoUrl}
+                    remaining={remaining}
+                    subject={event.subject}
+                    onUse={choosePreset}
+                    onClose={() => setBrowsing(null)}
+                  />
+                )}
                 <p className="muted" style={{ fontSize: 12.5, marginTop: 14 }}>
                   Edits are made by an AI model and labeled in the album. Your original is kept too.
                 </p>
