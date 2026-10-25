@@ -8,7 +8,7 @@
 import { isAdminRequest } from '../../../../../lib/auth';
 import { getEvent, listAllPhotos, updatePhoto } from '../../../../../lib/store';
 import { getConnectedEmail, setFolderLinkSharing } from '../../../../../lib/drive';
-import { driveReady, eventFolder, archivePhoto, needsArchive, shareOn, withTimeout } from '../../../../../lib/driveArchive';
+import { driveReady, eventFolder, archivePhoto, needsArchive, shareOn, withTimeout, isNotReady } from '../../../../../lib/driveArchive';
 
 export const config = { maxDuration: 60 };
 
@@ -48,14 +48,21 @@ export default async function handler(req, res) {
 
   const fresh = await getEvent(slug);
   let copied = 0;
+  let notReady = 0;
   const failed = [];
-  for (const photo of todo) {
+  // Photos first: clips may still be waiting on Cloudflare's MP4.
+  const ordered = [...todo].sort((a, b) => (a.kind === 'video') - (b.kind === 'video'));
+  for (const photo of ordered) {
     if (Date.now() - startedAt > BUDGET_MS) break;
     try {
-      const patch = await withTimeout(archivePhoto(fresh, photo), 20_000);
+      const patch = await withTimeout(archivePhoto(fresh, photo), 30_000);
       await updatePhoto(slug, photo.id, patch);
       copied += 1;
     } catch (err) {
+      if (isNotReady(err)) {
+        notReady += 1;
+        continue;
+      }
       console.error('Drive copy failed for', photo.id, err.message);
       failed.push(photo.id);
       await updatePhoto(slug, photo.id, { syncStatus: 'failed' });
@@ -68,6 +75,7 @@ export default async function handler(req, res) {
     shared: shareOn(fresh),
     copied,
     failed: failed.length,
+    notReady,
     remaining: Math.max(0, todo.length - copied),
   });
 }

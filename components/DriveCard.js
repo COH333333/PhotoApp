@@ -42,7 +42,11 @@ export default function DriveCard({ slug, ready, initialUrl, initialShared, init
         setNote(data.remaining ? `Copied ${total}… ${data.remaining} to go` : `Done. Copied ${total}.`);
         if (!data.remaining) return;
         if (!data.copied) {
-          setNote(`Copied ${total}; ${data.remaining} couldn't be copied. Try again in a minute.`);
+          setNote(
+            data.notReady && data.notReady >= data.remaining
+              ? `Copied ${total}. ${data.notReady} clip${data.notReady === 1 ? ' is' : 's are'} still being prepared by Cloudflare and will copy automatically.`
+              : `Copied ${total}; ${data.remaining} couldn't be copied. Try again in a minute.`
+          );
           return;
         }
       }
@@ -87,8 +91,8 @@ export default function DriveCard({ slug, ready, initialUrl, initialShared, init
       )}
       {note && <p className="muted" role="status" style={{ marginBottom: 0 }}>{note}</p>}
       <p className="muted" style={{ fontSize: 12.5, marginBottom: 0, marginTop: 10 }}>
-        Only photos visible in the album are copied; hiding or deleting one moves its copy to Drive's
-        trash. Video clips stay in the app.
+        Photos and video clips visible in the album are copied (clips a minute or so after upload, once
+        Cloudflare has prepared them); hiding or deleting one moves its copy to Drive's trash.
       </p>
     </div>
   );

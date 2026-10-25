@@ -3,7 +3,7 @@ import { del } from '@vercel/blob';
 import { isAdminRequest } from '../../../../../../lib/auth';
 import { getEvent, getPhoto, updatePhoto, removePhoto } from '../../../../../../lib/store';
 import { deleteVideo } from '../../../../../../lib/stream';
-import { driveReady, archivePhoto, unarchivePhoto, withTimeout } from '../../../../../../lib/driveArchive';
+import { driveReady, archivePhoto, unarchivePhoto, withTimeout, isNotReady } from '../../../../../../lib/driveArchive';
 
 export const config = { maxDuration: 60 };
 
@@ -23,7 +23,7 @@ export default async function handler(req, res) {
     const patch = { status, reviewedAt: new Date().toISOString() };
     let driveNote = null;
     try {
-      if (status === 'approved' && photo.kind !== 'video' && photo.syncStatus !== 'synced' && (await driveReady())) {
+      if (status === 'approved' && photo.syncStatus !== 'synced' && (await driveReady())) {
         // Now visible in the album, so it goes to the (possibly shared) Drive folder.
         Object.assign(patch, await withTimeout(archivePhoto(event, { ...photo, ...patch }), 40_000));
       } else if (status !== 'approved' && photo.syncStatus === 'synced') {
@@ -33,6 +33,12 @@ export default async function handler(req, res) {
         patch.syncStatus = status === 'pending' ? 'waiting' : 'removed';
       }
     } catch (err) {
+      if (isNotReady(err)) {
+        // A clip whose MP4 isn't ready yet: it's copied automatically later.
+        patch.syncStatus = 'waiting';
+        const updated = await updatePhoto(slug, photo.id, patch);
+        return res.status(200).json({ photo: updated });
+      }
       console.error('Drive update on moderation failed:', err.message);
       if (status === 'approved') patch.syncStatus = 'failed';
       driveNote = "Saved, but Google Drive didn't update. Use \"Copy missing photos to Drive\" to retry.";

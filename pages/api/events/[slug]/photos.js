@@ -5,6 +5,7 @@ import {
   updateEvent,
   pagePhotos,
   addPhoto,
+  updatePhoto,
   publicPhoto,
   takeEdit,
   putEditBack,
@@ -16,7 +17,8 @@ import { makeThumbnail, makeMedium } from '../../../../lib/thumbnail';
 import { readGuestId } from '../../../../lib/guest';
 import { requireAccess } from '../../../../lib/access';
 import { uploadsOpen } from '../../../../lib/eventState';
-import { driveReady, archivePhoto, withTimeout } from '../../../../lib/driveArchive';
+import { driveReady, archivePhoto, archiveReadyClips, withTimeout } from '../../../../lib/driveArchive';
+import { waitUntil } from '@vercel/functions';
 import { refreshProcessingVideos } from '../../../../lib/videoRefresh';
 
 export const config = { api: { bodyParser: false }, maxDuration: 60 };
@@ -47,6 +49,15 @@ export default async function handler(req, res) {
     let page = await pagePhotos(slug, { limit, before, since, challenge });
     if (await refreshProcessingVideos(slug, page.photos)) {
       page = await pagePhotos(slug, { limit, before, since, challenge });
+    }
+    // Copy any clips that have become ready into Drive, after the guest has
+    // their answer (so browsing never waits on it).
+    if (page.photos.some((p) => p.kind === 'video')) {
+      waitUntil(
+        archiveReadyClips(event, page.photos, { updatePhoto }).catch((err) =>
+          console.error('Background clip copy failed:', err.message)
+        )
+      );
     }
     return res.status(200).json({ photos: page.photos.map(publicPhoto), hasMore: page.hasMore });
   }
