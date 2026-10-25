@@ -1,7 +1,7 @@
 // Host moderation for a single photo: approve, hide, or delete.
 import { del } from '@vercel/blob';
 import { isAdminRequest } from '../../../../../../lib/auth';
-import { getEvent, getPhoto, updatePhoto, removePhoto } from '../../../../../../lib/store';
+import { getEvent, getPhoto, updatePhoto, removePhoto, clearReports } from '../../../../../../lib/store';
 import { deleteVideo } from '../../../../../../lib/stream';
 import { driveReady, archivePhoto, unarchivePhoto, withTimeout, isNotReady } from '../../../../../../lib/driveArchive';
 
@@ -17,13 +17,35 @@ export default async function handler(req, res) {
   const photo = await getPhoto(slug, String(id));
   if (!photo) return res.status(404).json({ error: 'Photo not found' });
 
+  if (req.method === 'PATCH' && req.body?.clearFlag) {
+    // The host looked and it's fine: un-blur it, forget the reports, and
+    // let it go to Drive like any other photo.
+    const patch = { flagged: false, flag: { ...(photo.flag || {}), clearedAt: new Date().toISOString() }, blurUrl: null };
+    if (photo.blurUrl) await del(photo.blurUrl).catch(() => {});
+    await clearReports(slug, photo.id).catch(() => {});
+    let driveNote = null;
+    if (photo.status === 'approved' && (await driveReady())) {
+      try {
+        Object.assign(patch, await withTimeout(archivePhoto(event, { ...photo, ...patch }), 40_000));
+      } catch (err) {
+        if (!isNotReady(err)) {
+          console.error('Drive copy after clearing failed:', err.message);
+          patch.syncStatus = 'failed';
+          driveNote = "Cleared, but Google Drive didn't update. Use \"Copy missing photos to Drive\" to retry.";
+        }
+      }
+    }
+    const updated = await updatePhoto(slug, photo.id, patch);
+    return res.status(200).json({ photo: updated, driveNote });
+  }
+
   if (req.method === 'PATCH') {
     const { status } = req.body || {};
     if (!STATUSES.includes(status)) return res.status(400).json({ error: 'Unknown status' });
     const patch = { status, reviewedAt: new Date().toISOString() };
     let driveNote = null;
     try {
-      if (status === 'approved' && photo.syncStatus !== 'synced' && (await driveReady())) {
+      if (status === 'approved' && !photo.flagged && photo.syncStatus !== 'synced' && (await driveReady())) {
         // Now visible in the album, so it goes to the (possibly shared) Drive folder.
         Object.assign(patch, await withTimeout(archivePhoto(event, { ...photo, ...patch }), 40_000));
       } else if (status !== 'approved' && photo.syncStatus === 'synced') {
@@ -52,6 +74,8 @@ export default async function handler(req, res) {
     // days): the event folder may be shared, so a deleted photo shouldn't
     // stay in it.
     await unarchivePhoto(photo).catch((err) => console.error('Drive trash failed:', err.message));
+    if (photo.blurUrl) await del(photo.blurUrl).catch(() => {});
+    await clearReports(slug, photo.id).catch(() => {});
     if (photo.kind === 'video') {
       await deleteVideo(photo.videoUid || photo.id).catch((err) => console.error('Stream delete failed:', err.message));
     } else {

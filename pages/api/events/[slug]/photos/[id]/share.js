@@ -71,6 +71,7 @@ export default async function handler(req, res) {
 
   const photo = await getPhoto(slug, String(id));
   if (!photo || !isVisible(photo)) return res.status(404).json({ error: 'Photo not found' });
+  if (photo.flagged) return res.status(403).json({ error: 'This photo is waiting for the host to review it.' });
 
   const format = FRAMES[req.query.format] ? req.query.format : 'original';
   const source = await fetch(photo.url);

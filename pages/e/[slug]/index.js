@@ -87,6 +87,7 @@ function CaptureFlow({ event, presets, backdrops, initialRemaining, videos }) {
   const [message, setMessage] = useState('');
   const [postFailed, setPostFailed] = useState(null); // what we tried to post
   const [pendingApproval, setPendingApproval] = useState(false);
+  const [taggedForReview, setTaggedForReview] = useState(false);
   const [challengeId, setChallengeId] = useState(null);
   const [done, markDone] = useCompleted(event.slug);
   const [video, setVideo] = useState(null); // { file, url, duration }
@@ -128,6 +129,7 @@ function CaptureFlow({ event, presets, backdrops, initialRemaining, videos }) {
       const finishData = await finish.json().catch(() => ({}));
       if (!finish.ok) throw new Error(finishData.error || "Couldn't finish the upload.");
       setPendingApproval(Boolean(finishData.pending));
+      setTaggedForReview(Boolean(finishData.flagged));
       if (challengeId) markDone(challengeId);
       setStep('done');
     } catch (err) {
@@ -219,6 +221,7 @@ function CaptureFlow({ event, presets, backdrops, initialRemaining, videos }) {
         return;
       }
       setPendingApproval(Boolean(data.pending));
+      setTaggedForReview(Boolean(data.flagged));
       if (challengeId) markDone(challengeId);
       setStep('done');
     } catch {
@@ -460,6 +463,8 @@ function CaptureFlow({ event, presets, backdrops, initialRemaining, videos }) {
             <p className="muted" style={{ marginBottom: 24 }}>
               {pendingApproval
                 ? "It'll appear in the album once the host approves it. Thanks for sharing the moment."
+                : taggedForReview
+                ? "Our automatic check wants the host to take a quick look, so it shows blurred in the album until then. If it's fine, it'll appear as normal."
                 : 'Thanks for sharing the moment.'}
             </p>
             <div style={{ display: 'flex', gap: 12, justifyContent: 'center' }}>

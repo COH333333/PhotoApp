@@ -191,6 +191,32 @@ export default function PhotoGallery({
 
   const shown = filter ? photos.filter(filter) : photos;
 
+  // Photos this guest reported (this visit). A report is private: the photo
+  // only changes for everyone once enough guests have reported it.
+  const [reported, setReported] = useState({});
+  async function report(photo) {
+    if (!window.confirm("Report this photo to the host? Use this for anything that shouldn't be in the album.")) return;
+    try {
+      const res = await fetch(`/api/events/${slug}/photos/${photo.id}/report`, { method: 'POST' });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        window.alert(data.error || "Couldn't send the report. Try again.");
+        return;
+      }
+      setReported((r) => ({ ...r, [photo.id]: true }));
+      // Enough reports: swap in the blurred version (or drop it) right away.
+      if (data.photo) {
+        setPhotos((cur) => cur.map((p) => (p.id === photo.id ? data.photo : p)));
+        setActive(data.photo);
+      } else if (data.removed) {
+        setPhotos((cur) => cur.filter((p) => p.id !== photo.id));
+        setActive(null);
+      }
+    } catch {
+      window.alert('Connection dropped. Try again.');
+    }
+  }
+
   function open(p) {
     setShowOriginal(false);
     setSharing(false);
@@ -256,7 +282,8 @@ export default function PhotoGallery({
               decoding="async"
             />
             {p.aiLabel && <span className="ai-tag">AI · {p.aiLabel}</span>}
-            {p.kind === 'video' && (
+            {p.flagged && <span className="flag-label">Tagged for review</span>}
+            {p.kind === 'video' && !p.flagged && (
               <span className="video-badge">
                 {p.ready ? `▶ ${p.duration ? `${Math.round(p.duration)}s` : ''}` : 'processing'}
               </span>
@@ -280,7 +307,15 @@ export default function PhotoGallery({
             </button>
           )}
           <span className="lightbox-count">{activeIndex + 1} / {shown.length}{hasMore ? '+' : ''}</span>
-          {active.kind === 'video' && active.ready && active.playerUrl ? (
+          {active.flagged ? (
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }} onClick={(e) => e.stopPropagation()}>
+              <img src={active.url} alt="" className="lightbox-img" />
+              <p className="flag-banner">
+                <strong>Tagged for review.</strong> The host is taking a look at this one. It'll be back
+                if it's fine.
+              </p>
+            </div>
+          ) : active.kind === 'video' && active.ready && active.playerUrl ? (
             <iframe
               src={`${active.playerUrl}?autoplay=true&preload=auto`}
               className="player-frame"
@@ -306,8 +341,8 @@ export default function PhotoGallery({
             {active.guestName && <span className="muted" style={{ color: 'rgba(255,255,255,0.7)' }}>{active.guestName}</span>}
           </div>
           <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'center' }} onClick={(e) => e.stopPropagation()}>
-            <button className="btn btn-primary" onClick={() => setSharing(true)}>Share / Save</button>
-            {active.originalUrl && (
+            {!active.flagged && <button className="btn btn-primary" onClick={() => setSharing(true)}>Share / Save</button>}
+            {!active.flagged && active.originalUrl && (
               <button
                 className="btn btn-secondary"
                 style={{ color: '#fff', borderColor: 'rgba(255,255,255,0.35)' }}
@@ -317,6 +352,17 @@ export default function PhotoGallery({
               </button>
             )}
           </div>
+          {!active.flagged && (
+            <div onClick={(e) => e.stopPropagation()}>
+              {reported[active.id] ? (
+                <span className="report-link" style={{ textDecoration: 'none', cursor: 'default' }}>
+                  Reported. Thanks, the host will take a look.
+                </span>
+              ) : (
+                <button className="report-link" onClick={() => report(active)}>Report this photo</button>
+              )}
+            </div>
+          )}
           {sharing && <ShareSheet slug={slug} photo={active} onClose={() => setSharing(false)} />}
         </div>
       )}

@@ -30,7 +30,7 @@ export async function getServerSideProps(ctx) {
   const url = guestLink(`${proto}://${req.headers.host}`, event);
   const qrSvg = await QRCode.toString(url, { type: 'svg', margin: 1, color: { dark: '#14181c', light: '#ffffff' } });
   const page = await pagePhotos(params.slug, { limit: RECENT });
-  return { props: { event: pub, qrSvg, initialPhotos: page.photos.map(publicPhoto) } };
+  return { props: { event: pub, qrSvg, initialPhotos: page.photos.filter((p) => !p.flagged).map(publicPhoto) } };
 }
 
 export default function WallPage({ event, locked, qrSvg, initialPhotos = [] }) {
@@ -54,9 +54,10 @@ function Wall({ event, qrSvg, initialPhotos }) {
         const res = await fetch(`/api/events/${event.slug}/photos${q}`);
         if (!res.ok) return;
         const data = await res.json();
-        if (!data.photos.length) return;
-        setPhotos((cur) => [...data.photos, ...cur].slice(0, RECENT));
-        setFresh(data.photos[0]);
+        const fresh = data.photos.filter((p) => !p.flagged);
+        if (!fresh.length) return;
+        setPhotos((cur) => [...fresh, ...cur].slice(0, RECENT));
+        setFresh(fresh[0]);
         setIndex(0);
       } catch {
         // next poll

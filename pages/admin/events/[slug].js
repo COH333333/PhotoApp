@@ -17,6 +17,7 @@ import {
 import { templateOptions, subjectFor } from '../../../lib/templates';
 import { isAiConfigured } from '../../../lib/fal';
 import DriveCard from '../../../components/DriveCard';
+import { isScreeningOn, REPORT_THRESHOLD } from '../../../lib/moderation';
 import { driveReady, needsArchive } from '../../../lib/driveArchive';
 import { getConnectedEmail } from '../../../lib/drive';
 import { aiLimitsFor, videoLimitsFor } from '../../../lib/aiLimits';
@@ -59,6 +60,7 @@ export async function getServerSideProps({ req, params }) {
       globalSamples: await getGlobalSamples(),
       subject: subjectFor(event),
       aiConfigured: isAiConfigured(),
+      screening: { on: isScreeningOn(), reportThreshold: REPORT_THRESHOLD },
       drive: await (async () => {
         const ready = await driveReady();
         if (!ready) return { ready: false };
@@ -94,6 +96,7 @@ export default function AdminEventDetail({
   subject,
   aiConfigured,
   drive,
+  screening,
   videoConfigured,
   videoLimits,
   maxVideoSeconds,
@@ -246,8 +249,29 @@ export default function AdminEventDetail({
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ status }),
     });
-    if (res.ok) setPhotos((cur) => cur.map((p) => (p.id === id ? { ...p, status } : p)));
+    if (res.ok) {
+      const data = await res.json().catch(() => ({}));
+      setPhotos((cur) => cur.map((p) => (p.id === id ? { ...p, ...(data.photo || { status }) } : p)));
+      if (data.driveNote) window.alert(data.driveNote);
+    }
   }
+
+  // Un-blur a photo that was tagged for review.
+  async function clearFlag(id) {
+    const res = await fetch(`/api/admin/events/${event.slug}/photos/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ clearFlag: true }),
+    });
+    if (res.ok) {
+      const data = await res.json().catch(() => ({}));
+      setPhotos((cur) => cur.map((p) => (p.id === id ? { ...p, ...(data.photo || { flagged: false }) } : p)));
+      if (data.driveNote) window.alert(data.driveNote);
+    }
+  }
+
+  // Tagged photos show blurred on the dashboard too, until you tap to look.
+  const [revealed, setRevealed] = useState({});
 
   async function deletePhoto(id) {
     if (!window.confirm('Delete this photo from the album? This cannot be undone.')) return;
@@ -369,8 +393,10 @@ export default function AdminEventDetail({
   const pendingCount = photos.filter((p) => p.kind !== 'video' && p.syncStatus !== 'synced').length;
   const aiPhotoCount = photos.filter((p) => p.aiLabel).length;
   const awaiting = photos.filter((p) => p.status === 'pending').length;
+  const tagged = photos.filter((p) => p.flagged && p.status !== 'hidden').length;
   const shownPhotos = photos.filter((p) => {
     if (photoFilter === 'pending') return p.status === 'pending';
+    if (photoFilter === 'review') return p.flagged && p.status !== 'hidden';
     if (photoFilter === 'hidden') return p.status === 'hidden';
     return true;
   });
@@ -561,6 +587,12 @@ export default function AdminEventDetail({
                   <span className="muted">New photos wait in your queue below until you approve them.</span>
                 </span>
               </label>
+              <p className="muted" style={{ fontSize: 12.5, margin: '4px 0 0' }}>
+                {screening.on
+                  ? `Automatic screening is on: likely explicit or violent photos are blurred and tagged for your review. `
+                  : 'Automatic screening is off (add GOOGLE_VISION_API_KEY in Vercel to turn it on). '}
+                Guests can also report a photo; {screening.reportThreshold} reports blur it until you look.
+              </p>
               <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 12 }}>
                 <button className="btn btn-primary">Save</button>
                 {settingsState && <span className="muted" role="status">{settingsState}</span>}
@@ -817,6 +849,7 @@ export default function AdminEventDetail({
               <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
                 {[
                   ['all', 'All'],
+                  ['review', `Tagged for review${tagged ? ` (${tagged})` : ''}`],
                   ['pending', `Waiting for approval${awaiting ? ` (${awaiting})` : ''}`],
                   ['hidden', 'Hidden'],
                 ].map(([key, label]) => (
@@ -840,15 +873,31 @@ export default function AdminEventDetail({
                 <div className="gallery-grid">
                   {shownPhotos.map((p) => (
                     <div key={p.id} className={`mod-cell${p.status === 'hidden' ? ' is-hidden' : ''}`}>
-                      <img src={p.thumbUrl || p.url} alt="" loading="lazy" decoding="async" />
+                      <img
+                        src={p.thumbUrl || p.url}
+                        alt=""
+                        loading="lazy"
+                        decoding="async"
+                        className={p.flagged && !revealed[p.id] ? 'is-blurred' : ''}
+                        onClick={() => p.flagged && setRevealed((r) => ({ ...r, [p.id]: !r[p.id] }))}
+                        title={p.flagged ? 'Tap to show or blur' : undefined}
+                      />
+                      {p.flagged && p.status !== 'hidden' && (
+                        <span className="review-tag" title={p.flag?.reason || ''}>
+                          Review · {p.flag?.source === 'reports' ? 'reported' : 'auto'}
+                        </span>
+                      )}
                       {p.aiLabel && <span className="ai-tag">AI · {p.aiLabel}</span>}
                       {p.kind === 'video' && <span className="video-badge">▶ video</span>}
                       {p.status === 'pending' && <span className="sync-tag">waiting</span>}
                       {p.status === 'hidden' && <span className="sync-tag">hidden</span>}
-                      {p.status !== 'pending' && p.status !== 'hidden' && p.kind !== 'video' && p.syncStatus !== 'synced' && (
+                      {p.status !== 'pending' && p.status !== 'hidden' && !p.flagged && p.syncStatus !== 'synced' && (
                         <span className="sync-tag">{p.syncStatus === 'failed' ? 'sync failed' : 'not in Drive'}</span>
                       )}
                       <div className="mod-actions">
+                        {p.flagged && p.status !== 'hidden' && (
+                          <button onClick={() => clearFlag(p.id)} title={p.flag?.reason || ''}>Clear</button>
+                        )}
                         {p.status === 'pending' || p.status === 'hidden' ? (
                           <button onClick={() => setStatus(p.id, 'approved')}>Approve</button>
                         ) : (

@@ -19,6 +19,7 @@ import { requireAccess } from '../../../../lib/access';
 import { uploadsOpen } from '../../../../lib/eventState';
 import { driveReady, archivePhoto, archiveReadyClips, withTimeout } from '../../../../lib/driveArchive';
 import { waitUntil } from '@vercel/functions';
+import { screenImage, makeBlurredCopy, flagFields } from '../../../../lib/moderation';
 import { refreshProcessingVideos } from '../../../../lib/videoRefresh';
 
 export const config = { api: { bodyParser: false }, maxDuration: 60 };
@@ -137,7 +138,29 @@ export default async function handler(req, res) {
     }
 
     // Best effort. Without them the gallery just loads the full photo.
-    const [thumb, medium] = await Promise.all([makeThumbnail(displayBuffer), makeMedium(displayBuffer)]);
+    // Screening runs alongside, so it adds little to the guest's wait.
+    const [thumb, medium, screen] = await Promise.all([
+      makeThumbnail(displayBuffer),
+      makeMedium(displayBuffer),
+      screenImage(displayBuffer),
+    ]);
+    if (screen?.flag) {
+      try {
+        Object.assign(
+          photo,
+          flagFields({
+            reason: `Automatic check: ${screen.flag}`,
+            source: 'auto',
+            scores: screen.scores,
+            blurUrl: await makeBlurredCopy(slug, id, displayBuffer),
+          })
+        );
+      } catch (err) {
+        // No blurred copy means nothing safe to show: hold it for the host.
+        console.error('Blurred copy failed, holding photo:', err.message);
+        photo.status = 'pending';
+      }
+    }
     const uploads = [];
     if (thumb) {
       uploads.push(
@@ -166,7 +189,7 @@ export default async function handler(req, res) {
 
   // Only photos that are visible in the album go to Drive (the folder may be
   // shared). One waiting for approval is copied when the host approves it.
-  if (photo.status !== 'approved') {
+  if (photo.status !== 'approved' || photo.flagged) {
     photo.syncStatus = 'waiting';
   } else if (await driveReady()) {
     try {
@@ -188,5 +211,9 @@ export default async function handler(req, res) {
     );
   }
 
-  return res.status(201).json({ photo: publicPhoto(photo), pending: photo.status === 'pending' });
+  return res.status(201).json({
+    photo: publicPhoto(photo),
+    pending: photo.status === 'pending',
+    flagged: Boolean(photo.flagged),
+  });
 }

@@ -6,6 +6,7 @@ import { getEvent, takePendingVideo, addPhoto, publicPhoto, releaseVideo } from 
 import { readGuestId } from '../../../../../lib/guest';
 import { requireAccess } from '../../../../../lib/access';
 import { getVideo, describeVideo, enableDownload, deleteVideo } from '../../../../../lib/stream';
+import { screenClip } from '../../../../../lib/videoRefresh';
 
 export const config = { maxDuration: 30 };
 
@@ -66,8 +67,12 @@ export default async function handler(req, res) {
     downloadUrl,
     aiPreset: null,
     aiLabel: null,
-    syncStatus: 'skipped', // videos aren't archived to Drive
+    // Copied to Drive once Stream's MP4 is ready (see lib/driveArchive).
+    syncStatus: 'waiting',
   };
+  // Clips ready this quickly get screened now; slower ones when they finish
+  // processing (lib/videoRefresh).
+  if (info.ready) Object.assign(photo, await screenClip(slug, uid, info.posterUrl));
   await addPhoto(slug, photo);
-  return res.status(201).json({ photo: publicPhoto(photo), pending: photo.status === 'pending' });
+  return res.status(201).json({ photo: publicPhoto(photo), pending: photo.status === 'pending', flagged: Boolean(photo.flagged) });
 }
