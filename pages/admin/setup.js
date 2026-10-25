@@ -65,7 +65,14 @@ export default function AdminSetup({ configured, connected, email, root: initial
           Google Drive
         </h1>
 
-        {error && error !== 'not_configured' && (
+        {error === 'drive_permission_missing' && (
+          <p className="notice-dark">
+            Google didn't give the app permission to use Drive. Click Connect again, and on Google's
+            screen make sure the box for "See, edit, create, and delete only the specific Google Drive
+            files you use with this app" is ticked before you press Continue.
+          </p>
+        )}
+        {error && error !== 'not_configured' && error !== 'drive_permission_missing' && (
           <p className="notice-dark">Google said: {error}. Try again, and choose the account you want.</p>
         )}
 
@@ -84,7 +91,7 @@ export default function AdminSetup({ configured, connected, email, root: initial
           <div className="card">
             <p className="muted">
               Authorize this app to create folders and upload files in your Google Drive. Google will ask
-              which account to use. The app can only see the folders and files it creates, nothing else
+              which account to use. On Google's permissions screen, tick the Google Drive box. The app can only see the folders and files it creates, nothing else
               in your Drive.
             </p>
             <a href="/api/auth/google" className="btn btn-primary">
