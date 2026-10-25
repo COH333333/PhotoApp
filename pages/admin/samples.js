@@ -2,6 +2,7 @@ import { useRef, useState } from 'react';
 import Head from 'next/head';
 import Link from 'next/link';
 import ImageViewer from '../../components/ImageViewer';
+import ModelSwitch from '../../components/ModelSwitch';
 import { MODELS } from '../../lib/models';
 import { isAdminRequest } from '../../lib/auth';
 import { getGlobalSamples, getHiddenPresets, getPromptOverrides, getPresetModels, getStyleCustom } from '../../lib/store';
@@ -64,26 +65,6 @@ function fingerprint(text) {
 }
 
 // Full / Lite switch for one style.
-function ModelSwitch({ value, onChange, disabled, compact = false }) {
-  return (
-    <span className={`model-switch${compact ? ' is-compact' : ''}`} role="group" aria-label="AI model">
-      {Object.entries(MODELS).map(([tier, m]) => (
-        <button
-          key={tier}
-          type="button"
-          className={value === tier ? 'is-on' : ''}
-          aria-pressed={value === tier}
-          disabled={disabled}
-          title={`${m.name} · about $${m.cost.toFixed(3).replace(/0$/, '')} an edit`}
-          onClick={() => value !== tier && onChange(tier)}
-        >
-          {m.label}
-        </button>
-      ))}
-    </span>
-  );
-}
-
 function PromptEditor({ style, override, onSave, onClose }) {
   const [text, setText] = useState(override || style.defaultPrompt);
   const [state, setState] = useState('');

@@ -26,6 +26,8 @@ import { preparePhoto } from '../../../lib/heicConvert';
 import QRCodeCard from '../../../components/QRCodeCard';
 import ColorField from '../../../components/ColorField';
 import ImageViewer from '../../../components/ImageViewer';
+import ModelSwitch from '../../../components/ModelSwitch';
+import { MODELS } from '../../../lib/models';
 import { guestLink, albumLink, wallLink } from '../../../lib/access';
 import { uploadsState } from '../../../lib/eventState';
 
@@ -135,6 +137,30 @@ export default function AdminEventDetail({
   const [previews, setPreviews] = useState(event.stylePreviews || {});
   const [previewBusy, setPreviewBusy] = useState(null); // preset id being made
   const [previewLog, setPreviewLog] = useState('');
+  // Event previews use Lite unless switched to Full here; this never changes
+  // which model guests' own edits use (that's the Style library's setting).
+  const [previewTiers, setPreviewTiers] = useState(event.stylePreviewTiers || {});
+  const [previewChoices, setPreviewChoices] = useState(event.previewModels || {});
+  const previewTier = (id) => previewChoices[id] || 'lite';
+
+  async function choosePreviewTier(id, tier) {
+    const before = previewChoices;
+    setPreviewChoices((c) => {
+      const next = { ...c };
+      if (tier === 'lite') delete next[id];
+      else next[id] = tier;
+      return next;
+    });
+    const res = await fetch(`/api/admin/events/${event.slug}/previews`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ presetId: id, tier }),
+    }).catch(() => null);
+    if (!res?.ok) {
+      setPreviewChoices(before);
+      setPreviewLog('Could not save that choice.');
+    }
+  }
 
   async function makePreview(id) {
     setPreviewBusy(id);
@@ -142,7 +168,7 @@ export default function AdminEventDetail({
       const res = await fetch(`/api/admin/events/${event.slug}/previews`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ presetId: id }),
+        body: JSON.stringify({ presetId: id, tier: previewTier(id) }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -150,6 +176,7 @@ export default function AdminEventDetail({
         return false;
       }
       setPreviews(data.stylePreviews);
+      if (data.stylePreviewTiers) setPreviewTiers(data.stylePreviewTiers);
       return true;
     } catch {
       setPreviewLog('Connection dropped. Try again.');
@@ -176,7 +203,9 @@ export default function AdminEventDetail({
         id: p.id,
         url: e.url,
         title: p.label,
-        subtitle: e.own ? 'This event\'s own sample' : 'App-wide sample from the Style library',
+        subtitle: e.own
+          ? `This event's own sample${previewTiers[p.id] ? ` · made on ${MODELS[previewTiers[p.id]].label}` : ''}`
+          : 'App-wide sample from the Style library',
         original: e.original,
       };
     });
@@ -185,7 +214,7 @@ export default function AdminEventDetail({
     setPreviewLog('');
     const todo = allPresets.filter((p) => p.previewable && enabled.includes(p.id) && !previews[p.id]);
     for (const p of todo) {
-      setPreviewLog(`Making ${p.label}…`);
+      setPreviewLog(`Making ${p.label} on ${MODELS[previewTier(p.id)].label}…`);
       if (!(await makePreview(p.id))) return;
     }
     setPreviewLog(todo.length ? 'Done.' : 'All enabled styles already have previews.');
@@ -193,7 +222,11 @@ export default function AdminEventDetail({
 
   async function removePreview(id) {
     const res = await fetch(`/api/admin/events/${event.slug}/previews?id=${id}`, { method: 'DELETE' });
-    if (res.ok) setPreviews((await res.json()).stylePreviews);
+    if (res.ok) {
+      const data = await res.json();
+      setPreviews(data.stylePreviews);
+      if (data.stylePreviewTiers) setPreviewTiers(data.stylePreviewTiers);
+    }
   }
 
   const [streamStatus, setStreamStatus] = useState(null);
@@ -764,9 +797,11 @@ export default function AdminEventDetail({
               <h2 className="display" style={{ fontSize: 16, marginTop: 0 }}>Style previews</h2>
               <p className="muted" style={{ marginTop: 0 }}>
                 Optional. Guests already see the app-wide <Link href="/admin/samples" style={{ color: 'inherit' }}>style samples</Link>;
-                make these only if you want the samples to show {subject} instead. One edit per style
-                ({`$${defaultCost.toFixed(2)}`}), made from your first portrait to pose with. Save the AI settings
-                first so the list matches what guests see.
+                make these only if you want the samples to show {subject} instead. One edit per style, made
+                from your first portrait to pose with. Previews are made on Lite (about ${MODELS.lite.cost.toFixed(3).replace(/0$/, '')})
+                unless you switch a style to Full (${MODELS.full.cost.toFixed(2)}) below; that only changes the
+                preview, not which model guests' edits use. Save the AI settings first so the list matches what
+                guests see.
               </p>
               {backdrops.length === 0 && references.length === 0 && (
                 <p className="notice-dark">Add a portrait to pose with first; that's the photo the samples are made from.</p>
@@ -810,7 +845,24 @@ export default function AdminEventDetail({
                     <span className="muted" style={{ fontSize: 11.5, display: 'block', marginTop: 4 }}>
                       {p.label}
                       {!previews[p.id] && effectivePreview(p.id) && <span className="tiny-tag">app-wide</span>}
+                      {previews[p.id] && previewTiers[p.id] && <span className="tiny-tag">{MODELS[previewTiers[p.id]].label}</span>}
                     </span>
+                    <ModelSwitch
+                      compact
+                      value={previewTier(p.id)}
+                      disabled={previewBusy !== null}
+                      onChange={(t) => choosePreviewTier(p.id, t)}
+                    />
+                    {previews[p.id] && previewTiers[p.id] && previewTiers[p.id] !== previewTier(p.id) && (
+                      <button
+                        type="button"
+                        style={{ background: 'none', border: 0, fontSize: 11, cursor: 'pointer', textDecoration: 'underline', color: 'inherit', opacity: 0.8, display: 'block', margin: '2px auto 0' }}
+                        disabled={previewBusy !== null}
+                        onClick={() => { setPreviewLog(''); makePreview(p.id); }}
+                      >
+                        {previewBusy === p.id ? 'making…' : `remake on ${MODELS[previewTier(p.id)].label}`}
+                      </button>
+                    )}
                     {!previews[p.id] && effectivePreview(p.id) && (
                       <button
                         type="button"
