@@ -18,6 +18,9 @@ export default function Home() {
       <Link href="/admin" className="btn btn-primary">
         Go to host dashboard
       </Link>
+      <p className="muted" style={{ marginTop: 48, fontSize: 13 }}>
+        <Link href="/privacy">Privacy policy</Link>
+      </p>
     </div>
   );
 }
